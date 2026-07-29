@@ -1,0 +1,44 @@
+# One free web service: FastAPI serves the built React app.
+services:
+  - type: web
+    name: vetta
+    runtime: python
+    plan: free
+    healthCheckPath: /api/health
+    buildCommand: pip install -e . && cd frontend && npm install && npm run build
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: NODE_VERSION
+        value: "20"
+      - key: ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: LANGSMITH_TRACING
+        value: "true"
+      - key: LANGSMITH_PROJECT
+        value: vetta
+      - key: JOBS_USE_APIFY
+        value: "false"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: ADZUNA_APP_ID
+        sync: false
+      - key: ADZUNA_APP_KEY
+        sync: false
+      - key: JSEARCH_API_KEY
+        sync: false
+      - key: APIFY_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: LANGSMITH_API_KEY
+        sync: false
