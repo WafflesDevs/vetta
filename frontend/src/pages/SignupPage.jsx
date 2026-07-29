@@ -26,7 +26,7 @@ export default function SignupPage({ onAuth }) {
  });
  if (!data.session?.access_token) {
  setError(
- "Account created. Confirm email in Supabase settings, or turn Confirm email OFF for local testing, then log in."
+ "Email sent! Check your inbox to confirm, then log in."
  );
  return;
  }

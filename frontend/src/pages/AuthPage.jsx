@@ -29,7 +29,7 @@ export default function AuthPage({ onAuth }) {
 
  if (!data.session?.access_token) {
  setError(
- "Account created. Check your email to confirm, then log in. (Or turn off email confirm in Supabase Auth settings for local testing.)"
+ "Email sent! Check your inbox to confirm, then log in."
  );
  setMode("login");
  return;
