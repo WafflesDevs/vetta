@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 from typing import Iterator
+import re
 
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
@@ -26,7 +27,7 @@ Primary goals, in order:
 Interview practice lives in the Quiz section — point users there for MCQ practice.
 
 # Tools
-- `search_indeed`: Live jobs (Adzuna / JSearch / Tavily). Keep `max_items` at default (5) in chat.
+- `search_indeed`: Live jobs. Keep `max_items` at default (5) in chat.
 - `search_web`: Career/industry research only.
 - `score_job_fit` / `rewrite_resume` / `cover_letter_generator`: Pass job_title + company. job_description optional.
 
@@ -34,12 +35,16 @@ Interview practice lives in the Quiz section — point users there for MCQ pract
 - Uploaded resume is already available to tools. NEVER pass resume_text.
 - Never paste the full resume into tool arguments.
 
+# Output rules (critical)
+- Reply in plain language only. Short paragraphs or bullets.
+- NEVER output JSON, code fences, curly-brace objects, or tool payloads.
+- NEVER paste tool results. Rewrite them as a normal answer.
+- After research tools, end with a short Citations section (links only).
+- Never show raw tool errors.
+
 # Do not stall
 - Prefer action. Role + company is enough for tools.
 - Ask at most ONE clarifying question, only if company AND role are both missing.
-- Never show raw tool errors, raw JSON, API payloads, or search dumps to the user.
-- After tools run, answer in plain language only. Put links in a short Citations section at the end.
-- Never paste tool output verbatim.
 
 # Truthfulness & safety
 - Never invent experience.
@@ -102,45 +107,97 @@ def _chunk_text(content) -> str:
 
 
 def _is_assistant_token_msg(msg) -> bool:
-    """Only stream final assistant text — never tool dumps or human/system messages."""
     msg_type = (getattr(msg, "type", None) or "").lower()
     if msg_type in {"tool", "human", "system", "function"}:
         return False
     cls = type(msg).__name__
     if any(x in cls for x in ("Tool", "Human", "System", "Function")):
         return False
-    # AIMessage / AIMessageChunk
-    if msg_type in {"ai", "AIMESSAGECHUNK".lower()} or "AI" in cls or msg_type == "ai":
+    if "AI" in cls or msg_type in {"ai", ""}:
         return True
-    return msg_type in {"", "ai"} or "MessageChunk" in cls
-
-
-def _looks_like_tool_dump(text: str) -> bool:
-    t = (text or "").lstrip()
-    if not t:
-        return False
-    if t.startswith("{") and any(
-        k in t for k in ('"results"', '"query"', '"response_time"', '"request_id"', "follow_up_questions")
-    ):
-        return True
-    if t.startswith("[") and '"url"' in t and '"content"' in t:
-        return True
-    return False
+    return "MessageChunk" in cls and "Tool" not in cls
 
 
 def _scrub_assistant_text(text: str) -> str:
-    """Drop leaked tool/JSON blobs that sometimes get prepended to the final answer."""
+    """Remove any JSON / tool dumps so the user never sees them."""
     t = (text or "").strip()
     if not t:
         return ""
-    if _looks_like_tool_dump(t):
-        # Prefer the prose after a closing JSON object if present
-        end = t.rfind("}")
-        if end != -1 and end + 1 < len(t):
-            rest = t[end + 1 :].strip()
-            if rest and not _looks_like_tool_dump(rest):
-                return rest
-        return ""
+
+    # Strip markdown code fences (json or otherwise)
+    t = re.sub(r"```(?:json|JSON)?\s*[\s\S]*?```", "", t)
+
+    # Remove balanced {...} and [...] blobs that look like API/tool JSON
+    def _strip_balanced(s: str, open_ch: str, close_ch: str) -> str:
+        out = []
+        i = 0
+        n = len(s)
+        while i < n:
+            if s[i] == open_ch:
+                depth = 0
+                j = i
+                in_str = False
+                esc = False
+                while j < n:
+                    ch = s[j]
+                    if in_str:
+                        if esc:
+                            esc = False
+                        elif ch == "\\":
+                            esc = True
+                        elif ch == '"':
+                            in_str = False
+                    else:
+                        if ch == '"':
+                            in_str = True
+                        elif ch == open_ch:
+                            depth += 1
+                        elif ch == close_ch:
+                            depth -= 1
+                            if depth == 0:
+                                j += 1
+                                break
+                    j += 1
+                chunk = s[i:j]
+                # Keep non-JSON braces (rare); drop if it has JSON-ish keys/structure
+                if '"' in chunk or ":" in chunk or chunk.count(open_ch) > 1:
+                    i = j
+                    continue
+                out.append(chunk)
+                i = j
+            else:
+                out.append(s[i])
+                i += 1
+        return "".join(out)
+
+    # Only strip if it looks like leaked tool/API content
+    if any(
+        k in t
+        for k in (
+            '"results"',
+            '"query"',
+            '"score"',
+            '"cover_letter"',
+            '"tailored_bullets"',
+            '"response_time"',
+            '"request_id"',
+            "follow_up_questions",
+            "INTERNAL ",
+            '"job_title"',
+        )
+    ) or (t.lstrip().startswith(("{", "["))):
+        t = _strip_balanced(t, "{", "}")
+        t = _strip_balanced(t, "[", "]")
+
+    # Drop leftover INTERNAL markers
+    t = re.sub(r"INTERNAL [A-Z_]+ DATA[^\n]*\n?", "", t)
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+
+    if not t or t in {"{}", "[]"}:
+        return (
+            "I pulled that together, but the draft came out messy. "
+            "Ask me again and I will answer in plain language."
+        )
     return t
 
 
@@ -177,14 +234,13 @@ def _tool_names_from_update(update: dict) -> list[str]:
 
 @traceable(name="vetta_agent", run_type="chain")
 def llm_agent(user_input: str, chat_history: list, resume: str | None = None) -> str:
-    """Run one chat turn. chat_history is a list of {role, content} dicts."""
     pieces = []
     for event in llm_agent_stream(user_input, chat_history, resume):
         if event.get("type") == "token":
             pieces.append(event.get("text") or "")
         elif event.get("type") == "done":
             return event.get("content") or "".join(pieces)
-    return "".join(pieces)
+    return _scrub_assistant_text("".join(pieces))
 
 
 def llm_agent_stream(
@@ -192,7 +248,7 @@ def llm_agent_stream(
     chat_history: list,
     resume: str | None = None,
 ) -> Iterator[dict]:
-    """Yield status/token/done events for a streaming chat reply."""
+    """Yield status/token/done events. Tokens are emitted only after JSON scrubbing."""
     model = ChatOpenAI(
         model=config.AGENT_MODEL,
         temperature=0.2,
@@ -204,12 +260,8 @@ def llm_agent_stream(
 
     yield {"type": "status", "text": "Thinking..."}
 
-    full = ""
-    saw_token = False
+    raw = ""
     resume_value = (resume or "").strip()
-
-    # Keep ContextVar set only during agent iteration (not across yield), so StreamingResponse
-    # context switches cannot break token reset.
     stream_iter = agent.stream(payload, stream_mode=["updates", "messages"])
     try:
         while True:
@@ -244,26 +296,13 @@ def llm_agent_stream(
                 continue
 
             text = _chunk_text(getattr(msg, "content", None))
-            if not text or _looks_like_tool_dump(text):
-                continue
-            saw_token = True
-            full += text
-            yield {"type": "token", "text": text}
+            if text:
+                raw += text
 
-        if not saw_token and not full:
+        if not raw.strip():
             with use_resume(resume_value):
                 result = agent.invoke(payload)
-            full = _chunk_text(result["messages"][-1].content)
-            if _looks_like_tool_dump(full):
-                full = (
-                    "I found some career market data, but hit a formatting snag. "
-                    "Ask me again and I will summarize it cleanly."
-                )
-            if full:
-                yield {"type": "status", "text": "Generating..."}
-                step = 24
-                for i in range(0, len(full), step):
-                    yield {"type": "token", "text": full[i : i + step]}
+            raw = _chunk_text(result["messages"][-1].content)
     finally:
         close = getattr(stream_iter, "close", None)
         if callable(close):
@@ -272,6 +311,10 @@ def llm_agent_stream(
             except Exception:
                 pass
 
-    full = _scrub_assistant_text(full)
-    yield {"type": "done", "content": full}
-
+    clean = _scrub_assistant_text(raw)
+    if clean:
+        yield {"type": "status", "text": "Generating..."}
+        step = 28
+        for i in range(0, len(clean), step):
+            yield {"type": "token", "text": clean[i : i + step]}
+    yield {"type": "done", "content": clean}

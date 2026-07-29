@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import Logo from "../../Logo";
 import OnboardingModal, { needsOnboarding } from "../../components/OnboardingModal";
 import { prefetchJobs } from "../../jobsCache";
@@ -84,6 +84,8 @@ const LINKS = [
 export default function DashboardLayout({ user, profile, onLogout, onProfile }) {
   const name = profile?.display_name || user?.email || "you";
   const [onboardingOpen, setOnboardingOpen] = useState(() => needsOnboarding(profile));
+  const [navOpen, setNavOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     if (needsOnboarding(profile)) setOnboardingOpen(true);
@@ -95,8 +97,19 @@ export default function DashboardLayout({ user, profile, onLogout, onProfile }) 
     prefetchJobs(profile)?.catch(() => {});
   }, [profile?.target_roles, profile?.locations, onboardingOpen]);
 
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = navOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [navOpen]);
+
   return (
-    <div className="dash">
+    <div className={`dash ${navOpen ? "nav-open" : ""}`}>
       {onboardingOpen && (
         <OnboardingModal
           profile={profile}
@@ -112,8 +125,37 @@ export default function DashboardLayout({ user, profile, onLogout, onProfile }) 
         />
       )}
 
-      <aside className="dash-side">
+      <header className="dash-mobile-bar">
+        <button
+          type="button"
+          className="dash-menu-btn"
+          aria-label={navOpen ? "Close menu" : "Open menu"}
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen((v) => !v)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
         <Link to="/" className="brand brand-icon" aria-label="Vetta home">
+          <Logo size={26} />
+        </Link>
+        <Link to="/pricing" className="plan-chip" title="Current plan">
+          Free
+        </Link>
+      </header>
+
+      {navOpen ? (
+        <button
+          type="button"
+          className="dash-backdrop"
+          aria-label="Close menu"
+          onClick={() => setNavOpen(false)}
+        />
+      ) : null}
+
+      <aside className="dash-side">
+        <Link to="/" className="brand brand-icon dash-side-logo" aria-label="Vetta home">
           <Logo size={28} />
         </Link>
         <nav className="dash-nav">
@@ -131,7 +173,7 @@ export default function DashboardLayout({ user, profile, onLogout, onProfile }) 
         </nav>
         <div className="dash-foot">
           <div className="dash-user">
-            <Link to="/pricing" className="plan-chip" title="Current plan">
+            <Link to="/pricing" className="plan-chip dash-side-plan" title="Current plan">
               Free
             </Link>
             <div className="dash-user-meta">

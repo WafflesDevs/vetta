@@ -17,11 +17,13 @@
 
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
+html { -webkit-text-size-adjust: 100%; }
 body {
  font-family: var(--font);
  background: var(--bg);
  color: var(--text);
  -webkit-font-smoothing: antialiased;
+ overflow-x: hidden;
 }
 a { color: inherit; text-decoration: none; }
 button, input, textarea { font: inherit; color: inherit; }
@@ -1743,15 +1745,116 @@ a:hover .logo-wrap .logo-img,
 }
 
 @media (max-width: 960px) {
- .auth-page, .dash, .feature-rail, .price-grid, .grid-2, .grid-3, .jobs-split, .gemini-chat {
+ .auth-page, .feature-rail, .price-grid, .grid-2, .grid-3, .jobs-split, .gemini-chat {
  grid-template-columns: 1fr;
  }
- .auth-side { min-height: 220px; }
+ .auth-side { min-height: 180px; }
  .nav-links { display: none; }
  .hero-mark { opacity: 0.08; width: 70vw; }
- .jobs-list { max-height: 360px; }
- .gemini-chat { height: auto; }
- .gemini-rail { max-height: 220px; }
+ .jobs-list { max-height: 280px; }
+ .gemini-chat { height: auto; min-height: calc(100dvh - 4.5rem); }
+ .gemini-rail { max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
+ .gemini-main { min-height: 55vh; }
+ .dash {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+ }
+ .dash-mobile-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+ }
+ .dash-menu-btn {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: transparent;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  padding: 0;
+  cursor: pointer;
+ }
+ .dash-menu-btn span {
+  display: block;
+  width: 16px;
+  height: 1.5px;
+  background: var(--white);
+  transition: transform 0.2s var(--ease), opacity 0.2s;
+ }
+ .dash.nav-open .dash-menu-btn span:nth-child(1) {
+  transform: translateY(6.5px) rotate(45deg);
+ }
+ .dash.nav-open .dash-menu-btn span:nth-child(2) { opacity: 0; }
+ .dash.nav-open .dash-menu-btn span:nth-child(3) {
+  transform: translateY(-6.5px) rotate(-45deg);
+ }
+ .dash-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  border: 0;
+  background: rgba(0,0,0,0.55);
+ }
+ .dash-side {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(300px, 86vw);
+  z-index: 50;
+  transform: translateX(-105%);
+  transition: transform 0.28s var(--ease);
+  padding-top: max(1.2rem, env(safe-area-inset-top));
+  padding-bottom: max(1.2rem, env(safe-area-inset-bottom));
+  box-shadow: 12px 0 40px rgba(0,0,0,0.35);
+ }
+ .dash.nav-open .dash-side { transform: translateX(0); }
+ .dash-side-plan { display: none; }
+ .dash-main {
+  padding: 1rem 0.9rem 1.4rem;
+  padding-bottom: max(1.4rem, env(safe-area-inset-bottom));
+  min-width: 0;
+ }
+ .page-title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+ }
+ .page-title h1 { font-size: clamp(1.45rem, 6vw, 1.9rem); }
+ .resume-split { grid-template-columns: 1fr; }
+ .resume-coach, .resume-stage { min-height: 0; }
+ .resume-pdf-frame { min-height: 420px; height: 55vh; }
+ .resume-compose { flex-wrap: wrap; }
+ .resume-compose input { min-width: 0; width: 100%; }
+ .resume-toolbar { width: 100%; justify-content: flex-start; }
+ .btn { min-height: 44px; }
+ .field input, .field textarea, .auth-form input,
+ .g-composer input, .resume-compose input, .jobs-search input {
+  font-size: 16px;
+  min-height: 44px;
+ }
+ .onboard-card { max-height: min(90dvh, 640px); overflow: auto; }
+}
+
+.dash-mobile-bar { display: none; }
+
+@media (max-width: 520px) {
+ .jobs-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+ .jobs-tab { white-space: nowrap; }
+ .feat-row {
+  grid-template-columns: 1fr;
+ }
+ .feat-row-tag { grid-row: auto; }
 }
 
 /* ----- onboarding popup ----- */

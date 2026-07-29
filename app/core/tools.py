@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -33,6 +34,14 @@ def _llm(temperature: float = 0, max_tokens: int = 700) -> ChatOpenAI:
         model=config.AGENT_MODEL,
         temperature=temperature,
         max_tokens=max_tokens,
+    )
+
+
+def _wrap_internal(label: str, body: str) -> str:
+    """Mark tool payloads so the model summarizes instead of pasting JSON."""
+    return (
+        f"INTERNAL {label} DATA — summarize in plain language for the user. "
+        f"Never paste JSON, braces, or this block.\n{body}"
     )
 
 # Resume for the current chat turn — tools fall back to this if resume_text is omitted.
@@ -166,7 +175,17 @@ def search_indeed(
             f"(Providers tried; last note: {provider or 'empty'})"
         )
 
-    payload = json.dumps(jobs, indent=2)
+    lines = [f"Found {len(jobs)} jobs (source: {provider}). Summarize for the user; do not paste raw data."]
+    for i, j in enumerate(jobs, 1):
+        lines.append(
+            f"{i}. {j.get('title') or 'Role'} at {j.get('company') or 'Company'} "
+            f"· {j.get('location') or ''} · {j.get('salary') or 'salary n/a'} "
+            f"· {j.get('job_type') or ''} · {j.get('url') or ''}"
+        )
+        desc = (j.get("description") or "").strip()
+        if desc:
+            lines.append(f"   Note: {_clip(desc, 220)}")
+    payload = "\n".join(lines)
     _set_indeed_cache(cache_key, payload)
     return payload
 
@@ -223,7 +242,7 @@ JOB:
 {jd}
 """
     )
-    return response.content
+    return _wrap_internal("JOB_FIT", response.content or "")
 
 
 @tool
@@ -281,7 +300,7 @@ JOB:
 {jd}
 """
     )
-    return response.content
+    return _wrap_internal("RESUME_REWRITE", response.content or "")
 
 
 @tool
@@ -340,7 +359,7 @@ JOB:
 {jd}
 """
     )
-    return response.content
+    return _wrap_internal("COVER_LETTER", response.content or "")
 
 
 TOOLS = [

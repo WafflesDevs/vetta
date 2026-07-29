@@ -95,22 +95,36 @@ class QuizAnswerBody(BaseModel):
 @app.post("/api/auth/signup")
 def signup(body: SignupBody):
     client = get_anon_client()
-    result = client.auth.sign_up({
-        "email": body.email,
-        "password": body.password,
-        "options": {"data": {"display_name": body.display_name}},
-    })
+    try:
+        result = client.auth.sign_up({
+            "email": body.email,
+            "password": body.password,
+            "options": {"data": {"display_name": body.display_name}},
+        })
+    except Exception as exc:
+        traceback.print_exc()
+        detail = str(exc) or "Could not sign up."
+        # Common Supabase messages
+        low = detail.lower()
+        if "already" in low or "registered" in low:
+            raise HTTPException(status_code=400, detail="That email is already registered. Try logging in.")
+        raise HTTPException(status_code=400, detail="Could not sign up. Try another email or try again.")
+
     if not result.user:
         raise HTTPException(status_code=400, detail="Could not sign up. Try another email.")
 
-    # profile row is created by the DB trigger; update display name if provided
+    # profile row is created by the DB trigger; update display name if we have a session
     if body.display_name and result.session:
-        user_client = get_anon_client()
-        user_client.postgrest.auth(result.session.access_token)
-        user_client.table("profiles").update({
-            "display_name": body.display_name,
-            "email": body.email,
-        }).eq("id", result.user.id).execute()
+        try:
+            user_client = get_anon_client()
+            user_client.postgrest.auth(result.session.access_token)
+            user_client.table("profiles").update({
+                "display_name": body.display_name,
+                "email": body.email,
+            }).eq("id", result.user.id).execute()
+        except Exception:
+            traceback.print_exc()
+            # Don't fail signup if profile update fails (email-confirm flows)
 
     return {
         "user": {"id": result.user.id, "email": result.user.email},
@@ -118,7 +132,7 @@ def signup(body: SignupBody):
             "access_token": result.session.access_token if result.session else None,
             "refresh_token": result.session.refresh_token if result.session else None,
         },
-        "note": "If session is null, check your email to confirm signup (Supabase setting).",
+        "note": "Email sent! Check your inbox to confirm, then log in.",
     }
 
 
