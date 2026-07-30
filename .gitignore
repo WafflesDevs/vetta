@@ -1,4 +1,4 @@
-# Secrets & env
+# Secrets & env — never commit real keys
 .env
 .env.*
 !.env.example
@@ -6,8 +6,9 @@
 *.key
 credentials.json
 **/secrets/**
+.stripe/
 
-# Local runtime data (free-tier counters)
+# Local runtime data (quiz cycle counters, caches)
 .data/
 
 # Python
@@ -30,6 +31,8 @@ htmlcov/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.env
+frontend/.env.*
 
 # OS / IDE
 .DS_Store
@@ -37,6 +40,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+.cursor/
 
 # Local user uploads / personal files
 Resume.pdf
@@ -46,3 +50,4 @@ uploads/
 # Logs
 *.log
 npm-debug.log*
+yarn-error.log*

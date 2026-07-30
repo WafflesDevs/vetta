@@ -22,6 +22,22 @@ services:
         value: vetta
       - key: JOBS_USE_APIFY
         value: "false"
+      - key: MAX_CHATS
+        value: "2"
+      - key: MAX_MESSAGES_PER_CHAT
+        value: "30"
+      - key: JOBS_MAX_ITEMS
+        value: "10"
+      - key: JOBS_CACHE_TTL_SECONDS
+        value: "3600"
+      - key: JOBS_REFRESH_COOLDOWN_SECONDS
+        value: "3600"
+      - key: QUIZ_MAX_CYCLES_PER_HOUR
+        value: "2"
+      - key: QUIZ_CYCLE_WINDOW_SECONDS
+        value: "3600"
+      - key: QUIZ_QUESTIONS_PER_CYCLE
+        value: "5"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: TAVILY_API_KEY
@@ -42,6 +58,7 @@ services:
         sync: false
       - key: LANGSMITH_API_KEY
         sync: false
+      # Stripe optional — paid plans TBA (billing disabled in app)
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY

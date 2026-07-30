@@ -45,28 +45,16 @@ Open http://localhost:5173
 
 Supabase: run `supabase/schema.sql` (and `job_saves.sql` if you need likes/applied). For local signup, turn off email confirm in Auth settings.
 
-### Stripe (test mode)
+### Billing (TBA)
 
-1. Put `STRIPE_SECRET_KEY`, product/price IDs, and `APP_URL=http://localhost:5173` in `.env`.
-2. Ensure Supabase has `profiles.plan` (+ optional `stripe_customer_id`):
+Paid plans are **TBA** — Pricing/Plans are greyed out and Stripe checkout/portal/sync return 503.
+Everyone currently gets full product access with cost caps (see `.env.example`):
 
-```sql
-alter table public.profiles add column if not exists plan text default 'free';
-alter table public.profiles add column if not exists stripe_customer_id text;
-```
+- Chat: 2 open chats · 30 messages each (delete a chat to continue)
+- Jobs: limited to 10 due to cost · refresh once per hour
+- Quiz: 2 cycles per hour
 
-3. Forward webhooks locally:
-
-```bash
-stripe listen --forward-to localhost:8000/api/stripe/webhook
-```
-
-Copy the printed `whsec_…` into `.env` as `STRIPE_WEBHOOK_SECRET`, then restart the API.
-
-4. In the app: **Plans** or **Pricing** → Upgrade to Expert/Pro. Pay with test card `4242 4242 4242 4242`, any future expiry, any CVC.
-5. Webhook (and `POST /api/stripe/sync` on checkout success / Plans / Settings) sets `profiles.plan` to `careerexpert` or `careerpro`. Cancel via **Settings → Manage subscription** (Customer Portal); returning to Settings syncs back to `free` and deletes that user’s chats/messages (resume + prefs kept). Upgrading switches the existing Stripe subscription in place (no double charge).
-
-Endpoints: `POST /api/stripe/checkout`, `POST /api/stripe/portal`, `POST /api/stripe/sync`, `POST /api/stripe/webhook`. Requires `SUPABASE_SECRET_KEY` (service role) so plan writes bypass RLS.
+Stripe env vars are optional and unused until billing ships.
 
 ## Deploy on Render (free)
 
@@ -75,7 +63,7 @@ This repo is set up for **one free Web Service** via `render.yaml`.
 1. Push to GitHub (see below)
 2. [Render](https://dashboard.render.com) → **New** → **Blueprint** → select this repo
 3. Confirm plan is **Free**
-4. Paste env vars (same names as `.env.example`). Required: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, plus Adzuna / Tavily / LangSmith as you use them
+4. Paste secret env vars (same names as `.env.example`). Required: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, plus Adzuna / Tavily / LangSmith as you use them. Cost-cap knobs (`MAX_CHATS`, `JOBS_MAX_ITEMS`, etc.) are already set in `render.yaml`.
 5. Deploy. Health check: `/api/health`
 6. In Supabase Auth → URL config, add `https://YOUR-APP.onrender.com`
 
