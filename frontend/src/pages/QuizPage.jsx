@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import Logo from "../Logo";
 
@@ -10,9 +11,13 @@ export default function QuizPage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cyclesRemaining, setCyclesRemaining] = useState(null);
+  const [plan, setPlan] = useState("free");
 
-  async function start() {
-    const previous = questions.map((q) => q.question).filter(Boolean);
+  const canMoreRounds = cyclesRemaining === null || cyclesRemaining > 0;
+
+  async function start({ fresh = false } = {}) {
+    const previous = fresh ? [] : questions.map((q) => q.question).filter(Boolean);
     setBusy(true);
     setError("");
     setDone(false);
@@ -28,6 +33,12 @@ export default function QuizPage() {
       const next = data.questions || [];
       if (!next.length) throw new Error("No questions came back. Try again.");
       setQuestions(next);
+      if (data.limits) {
+        setPlan(data.limits.plan || "free");
+        setCyclesRemaining(
+          data.limits.cycles_remaining === undefined ? null : data.limits.cycles_remaining
+        );
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -61,16 +72,20 @@ export default function QuizPage() {
 
   const q = questions[index];
   const idle = !questions.length && !busy && !done;
+  const isFree = plan === "free";
 
   return (
     <div>
       <div className="page-title">
         <div>
           <h1>Interview Quiz</h1>
-          <p>MCQ drills from your preferences & resume.</p>
+          <p>
+            MCQ drills from your preferences & resume.
+            {isFree ? " Free: one cycle." : ""}
+          </p>
         </div>
-        {!idle && !done && !busy && (
-          <button className="btn btn-solid" onClick={start} disabled={busy}>
+        {!idle && !done && !busy && canMoreRounds && (
+          <button className="btn btn-solid" onClick={() => start()} disabled={busy}>
             New round
           </button>
         )}
@@ -83,10 +98,12 @@ export default function QuizPage() {
           <Logo size={56} />
           <h2>Wanna start a game?</h2>
           <p className="meta">
-            I’ll generate interview multiple-choice questions based on your
-            target role and resume.
+            Common interview MCQs matched to your target roles, with explanations.
+            {isFree
+              ? " Free includes one cycle — upgrade for unlimited rounds."
+              : ""}
           </p>
-          <button className="btn btn-solid" onClick={start} disabled={busy}>
+          <button className="btn btn-solid" onClick={() => start({ fresh: true })} disabled={busy}>
             Start quiz
           </button>
         </div>
@@ -133,13 +150,25 @@ export default function QuizPage() {
           <p style={{ fontSize: "1.4rem", fontWeight: 700, margin: "0.4rem 0 0.6rem" }}>
             {score} / {questions.length} correct
           </p>
-          <p className="meta" style={{ marginBottom: "1.2rem" }}>
-            Want to generate a new set of questions, or stop playing?
-          </p>
+          {canMoreRounds ? (
+            <p className="meta" style={{ marginBottom: "1.2rem" }}>
+              Want to generate a new set of questions, or stop playing?
+            </p>
+          ) : (
+            <p className="meta" style={{ marginBottom: "1.2rem" }}>
+              Free includes one quiz cycle. Upgrade for unlimited rounds.
+            </p>
+          )}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", justifyContent: "center" }}>
-            <button className="btn btn-solid" onClick={start} disabled={busy}>
-              Generate new ones
-            </button>
+            {canMoreRounds ? (
+              <button className="btn btn-solid" onClick={() => start()} disabled={busy}>
+                Generate new ones
+              </button>
+            ) : (
+              <Link className="btn btn-solid" to="/pricing">
+                View plans
+              </Link>
+            )}
             <button className="btn btn-ghost" onClick={stopPlaying} disabled={busy}>
               Stop playing
             </button>

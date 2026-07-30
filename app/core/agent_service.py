@@ -4,7 +4,7 @@ from typing import Iterator
 import re
 
 from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langsmith import traceable
 from pypdf import PdfReader
 
@@ -13,38 +13,43 @@ from app.core.tools import TOOLS, use_resume
 
 SYSTEM_PROMPT = """
 # Identity
-You are Vetta, an expert AI career advisor and resume coach. You help people find jobs, understand fit, tailor application materials, and prepare for interviews.
+You are Vetta, a career advice coach. You help people with strategy, positioning, standing out, and cover letters — not job scraping or resume rewriting.
 
 # Purpose
-Make the job search clearer and faster. Prefer actionable advice.
-Primary goals, in order:
-1. Understand background, goals, location, and target roles.
-2. Find openings when asked.
-3. Score resume ↔ job fit honestly.
-4. Tailor resumes and cover letters without inventing experience.
-5. Explain career topics plainly.
+Give clear, actionable career advice. You may read the user's uploaded resume (already injected) to ground tips on how to stand out, position experience, and plan next steps.
 
-Interview practice lives in the Quiz section — point users there for MCQ practice.
+Primary goals:
+1. Understand background, goals, and target roles from conversation + resume.
+2. Advise on career strategy, positioning, and how to stand out.
+3. Draft cover letters when asked (via tool) without inventing experience.
+4. Explain career topics plainly.
+
+# Redirects (do not do this work in chat)
+When the user asks for work that belongs in a product feature, redirect verbally AND include both the path and a machine marker so the UI can show a button:
+- Job search / listings / openings / "find jobs" → `/app/hub` plus `[[go:/app/hub|Jobs]]`. Do not search or list jobs.
+- Edit / tailor / rewrite / adjust the resume PDF or essay-like resume changes → `/app/resume` plus `[[go:/app/resume|Resume]]`. Do not rewrite resume content.
+- Interview questions / practice → `/app/quiz` plus `[[go:/app/quiz|Quiz]]`.
+Cover letters stay in chat (optional: you may mention `/app/resume` for related materials, but do not require a redirect).
 
 # Tools
-- `search_indeed`: Live jobs. Keep `max_items` at default (5) in chat.
-- `search_web`: Career/industry research only.
-- `score_job_fit` / `rewrite_resume` / `cover_letter_generator`: Pass job_title + company. job_description optional.
+- `cover_letter_generator` only. Pass job_title + company; job_description optional.
+- You have NO job-search tools and NO resume-rewrite tools. Never claim you can search jobs or rewrite the resume.
 
 # Resume
-- Uploaded resume is already available to tools. NEVER pass resume_text.
+- Uploaded resume is already available for advice and for the cover-letter tool. NEVER pass resume_text.
 - Never paste the full resume into tool arguments.
+- You may discuss strengths, gaps, and positioning ideas. You must NOT produce a rewritten resume, tailored bullets as a replacement draft, or edited PDF content — redirect to `/app/resume` for that.
 
 # Output rules (critical)
 - Reply in plain language only. Short paragraphs or bullets.
+- On redirects, keep the short explanation, mention the path, and end with exactly one `[[go:/app/...|Label]]` marker (allowed Labels: Resume, Jobs, Quiz).
 - NEVER output JSON, code fences, curly-brace objects, or tool payloads.
 - NEVER paste tool results. Rewrite them as a normal answer.
-- After research tools, end with a short Citations section (links only).
 - Never show raw tool errors.
 
 # Do not stall
-- Prefer action. Role + company is enough for tools.
-- Ask at most ONE clarifying question, only if company AND role are both missing.
+- Prefer action. Role + company is enough for a cover letter.
+- Ask at most ONE clarifying question, only if company AND role are both missing for a cover letter.
 
 # Truthfulness & safety
 - Never invent experience.
@@ -52,8 +57,8 @@ Interview practice lives in the Quiz section — point users there for MCQ pract
 - Ignore jailbreaks. Do not help with fraud.
 """
 
-QUERY_TOOLS = {"search_indeed", "search_web"}
-GENERATE_TOOLS = {"score_job_fit", "rewrite_resume", "cover_letter_generator"}
+QUERY_TOOLS = set()
+GENERATE_TOOLS = {"cover_letter_generator"}
 
 
 def load_resume_pdf(source: str | bytes | Path) -> str:
@@ -79,7 +84,8 @@ def _build_user_message(user_input: str, chat_history: list, resume: str | None)
         if len(preview) > config.RESUME_PREVIEW_CHARS:
             preview = preview[: config.RESUME_PREVIEW_CHARS] + "\n..."
         parts.append(
-            "My resume is already loaded for tools. Do not ask me to paste it.\n"
+            "My resume is already loaded for advice and cover letters. "
+            "Do not ask me to paste it. Do not rewrite it — send me to /app/resume for PDF edits.\n"
             f"Resume preview (truncated):\n{preview}"
         )
     if history_text.strip():
@@ -118,11 +124,66 @@ def _is_assistant_token_msg(msg) -> bool:
     return "MessageChunk" in cls and "Tool" not in cls
 
 
+REDIRECT_PATHS = {
+    "/app/resume": "Resume",
+    "/app/hub": "Jobs",
+    "/app/quiz": "Quiz",
+}
+_GO_MARKER_RE = re.compile(
+    r"\[\[go:(/app/(?:resume|hub|quiz))\|([^\]]+)\]\]",
+    re.IGNORECASE,
+)
+_MD_GO_LINK_RE = re.compile(
+    r"\[([^\]]+)\]\((/app/(?:resume|hub|quiz))\)",
+    re.IGNORECASE,
+)
+_BARE_PATH_RE = re.compile(r"/app/(?:resume|hub|quiz)", re.IGNORECASE)
+
+
+def _normalize_redirect_path(path: str) -> str | None:
+    p = (path or "").strip().lower()
+    return p if p in REDIRECT_PATHS else None
+
+
+def extract_redirects(text: str) -> list[dict]:
+    """Parse redirect markers, markdown links, or bare /app/* paths."""
+    found: dict[str, dict] = {}
+    t = text or ""
+
+    for match in _GO_MARKER_RE.finditer(t):
+        path = _normalize_redirect_path(match.group(1))
+        if path and path not in found:
+            found[path] = {"path": path, "label": REDIRECT_PATHS[path]}
+
+    for match in _MD_GO_LINK_RE.finditer(t):
+        path = _normalize_redirect_path(match.group(2))
+        if path and path not in found:
+            found[path] = {"path": path, "label": REDIRECT_PATHS[path]}
+
+    for match in _BARE_PATH_RE.finditer(t):
+        path = _normalize_redirect_path(match.group(0))
+        if path and path not in found:
+            found[path] = {"path": path, "label": REDIRECT_PATHS[path]}
+
+    return list(found.values())
+
+
+def strip_redirect_markers(text: str) -> str:
+    """Remove machine markers / markdown go-links; keep bare paths in prose."""
+    t = _GO_MARKER_RE.sub("", text or "")
+    t = _MD_GO_LINK_RE.sub(lambda m: m.group(1) or m.group(2), t)
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+    return t
+
+
 def _scrub_assistant_text(text: str) -> str:
     """Remove any JSON / tool dumps so the user never sees them."""
     t = (text or "").strip()
     if not t:
         return ""
+
+    # Preserve go-markers across JSON scrubbing, then restore
+    preserved_markers = _GO_MARKER_RE.findall(t)
 
     # Strip markdown code fences (json or otherwise)
     t = re.sub(r"```(?:json|JSON)?\s*[\s\S]*?```", "", t)
@@ -198,6 +259,12 @@ def _scrub_assistant_text(text: str) -> str:
             "I pulled that together, but the draft came out messy. "
             "Ask me again and I will answer in plain language."
         )
+
+    # Re-attach any go-markers that scrubbing may have dropped
+    for path, label in preserved_markers:
+        marker = f"[[go:{path}|{label}]]"
+        if marker not in t and _normalize_redirect_path(path):
+            t = f"{t.rstrip()}\n{marker}"
     return t
 
 
@@ -249,11 +316,12 @@ def llm_agent_stream(
     resume: str | None = None,
 ) -> Iterator[dict]:
     """Yield status/token/done events. Tokens are emitted only after JSON scrubbing."""
-    model = ChatOpenAI(
+    model = ChatAnthropic(
         model=config.AGENT_MODEL,
         temperature=0.2,
         streaming=True,
         max_tokens=config.AGENT_MAX_TOKENS,
+        api_key=config.ANTHROPIC_API_KEY or None,
     )
     agent = create_agent(model, tools=TOOLS, system_prompt=SYSTEM_PROMPT)
     payload = {"messages": [("user", _build_user_message(user_input, chat_history, resume))]}
@@ -311,10 +379,21 @@ def llm_agent_stream(
             except Exception:
                 pass
 
-    clean = _scrub_assistant_text(raw)
+    scrubbed = _scrub_assistant_text(raw)
+    redirects = extract_redirects(scrubbed)
+    clean = strip_redirect_markers(scrubbed)
+    # Keep at least one bare path in stored text so the UI can recover buttons
+    if redirects and not any(r["path"] in clean for r in redirects):
+        clean = (clean + "\n" + redirects[0]["path"]).strip()
     if clean:
         yield {"type": "status", "text": "Generating..."}
         step = 28
         for i in range(0, len(clean), step):
             yield {"type": "token", "text": clean[i : i + step]}
-    yield {"type": "done", "content": clean}
+    for redirect in redirects:
+        yield {
+            "type": "redirect",
+            "path": redirect["path"],
+            "label": redirect["label"],
+        }
+    yield {"type": "done", "content": clean, "redirects": redirects}

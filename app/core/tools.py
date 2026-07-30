@@ -7,8 +7,8 @@ from contextvars import ContextVar
 from threading import Lock
 
 from apify_client import ApifyClient
+from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 from langsmith import traceable
 from tavily import TavilyClient
 
@@ -29,11 +29,17 @@ def _clip(text: str, n: int) -> str:
     return text[:n] + "\n..."
 
 
-def _llm(temperature: float = 0, max_tokens: int = 700) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=config.AGENT_MODEL,
+def _llm(
+    temperature: float = 0,
+    max_tokens: int = 700,
+    *,
+    model: str | None = None,
+) -> ChatAnthropic:
+    return ChatAnthropic(
+        model=model or config.AGENT_MODEL,
         temperature=temperature,
         max_tokens=max_tokens,
+        api_key=config.ANTHROPIC_API_KEY or None,
     )
 
 
@@ -190,6 +196,219 @@ def search_indeed(
     return payload
 
 
+def _extract_json_payload(text: str):
+    """Best-effort JSON object/array parse from an LLM response."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    # fenced ```json ... ```
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw, re.IGNORECASE)
+    if fence:
+        try:
+            return json.loads(fence.group(1).strip())
+        except Exception:
+            pass
+    for open_ch, close_ch in (("{", "}"), ("[", "]")):
+        start = raw.find(open_ch)
+        end = raw.rfind(close_ch)
+        if start >= 0 and end > start:
+            try:
+                return json.loads(raw[start : end + 1])
+            except Exception:
+                continue
+    return None
+
+
+def _clamp_score(value) -> int | None:
+    try:
+        n = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(100, n))
+
+
+def compute_job_fit(
+    job_title: str,
+    company: str,
+    job_description: str = "",
+    resume_text: str = "",
+    *,
+    prefs: dict | None = None,
+) -> dict | None:
+    """Score resume (+ optional prefs) vs one job. Returns parsed fit dict or None."""
+    resume = _clip(_resolve_resume(resume_text), config.RESUME_TOOL_CHARS)
+    if not resume:
+        return None
+
+    jd = _clip(
+        (job_description or "").strip()
+        or f"{job_title} role at {company}. Score using the resume and general expectations for this title.",
+        2500,
+    )
+    prefs = prefs or {}
+    prefs_block = ""
+    if any(prefs.get(k) for k in ("target_roles", "locations", "goals")):
+        prefs_block = f"""
+PROFILE PREFS:
+- target_roles: {prefs.get("target_roles") or ""}
+- locations: {prefs.get("locations") or ""}
+- goals: {prefs.get("goals") or ""}
+Also weigh preference alignment (role/location/goals) into the score.
+"""
+
+    scorer = _llm(temperature=0, max_tokens=500, model=config.MATCH_SCORE_MODEL)
+    response = scorer.invoke(
+        f"""Compare this resume to this job. Return ONLY valid JSON with this shape:
+{{
+  "score": <integer 0-100>,
+  "summary": "<1-2 sentences>",
+  "strengths": ["..."],
+  "gaps": ["..."],
+  "rewrite_tips": ["..."]
+}}
+
+Be honest and specific. Score based on skills, experience, and role fit.
+{prefs_block}
+RESUME:
+{resume}
+
+JOB:
+{job_title} at {company}
+
+{jd}
+"""
+    )
+    data = _extract_json_payload(response.content or "")
+    if not isinstance(data, dict):
+        return None
+    score = _clamp_score(data.get("score"))
+    if score is None:
+        return None
+    data["score"] = score
+    return data
+
+
+def _heuristic_match_score(job: dict, resume: str, prefs: dict) -> int:
+    """Fast fallback when LLM batch fails — keyword overlap only."""
+    title = (job.get("title") or "").lower()
+    company = (job.get("company") or "").lower()
+    location = (job.get("location") or "").lower()
+    desc = (job.get("description") or "").lower()
+    hay = f"{title} {company} {location} {desc}"
+
+    roles = [r.strip().lower() for r in (prefs.get("target_roles") or "").split(",") if r.strip()]
+    locs = [l.strip().lower() for l in (prefs.get("locations") or "").split(",") if l.strip()]
+    goals = (prefs.get("goals") or "").lower()
+    resume_l = (resume or "").lower()
+
+    score = 35
+    for role in roles:
+        if role and role in title:
+            score += 22
+            break
+        if role and any(tok and tok in title for tok in role.split() if len(tok) > 3):
+            score += 12
+            break
+    for loc in locs:
+        if loc and (loc in location or loc == "remote" and "remote" in location):
+            score += 12
+            break
+    # light resume keyword hits from role words
+    tokens = set()
+    for role in roles:
+        tokens.update(t for t in role.split() if len(t) > 3)
+    if goals:
+        tokens.update(t for t in goals.split() if len(t) > 4)
+    hits = sum(1 for t in tokens if t in hay or t in resume_l)
+    score += min(25, hits * 4)
+    return max(0, min(100, score))
+
+
+@traceable(name="batch_score_job_matches", run_type="chain")
+def batch_score_job_matches(
+    jobs: list[dict],
+    resume_text: str,
+    prefs: dict | None = None,
+) -> dict[str, int]:
+    """
+    Score many hub jobs in one LLM call. Returns map job_key -> score (0-100).
+    job_key is url when present, else title|company|location.
+    """
+    prefs = prefs or {}
+    resume = _clip(_resolve_resume(resume_text), config.RESUME_TOOL_CHARS)
+    if not resume or not jobs:
+        return {}
+
+    items = []
+    keys: list[str] = []
+    for i, job in enumerate(jobs):
+        key = (job.get("url") or "").strip() or (
+            f"{job.get('title') or ''}|{job.get('company') or ''}|{job.get('location') or ''}"
+        )
+        keys.append(key)
+        items.append(
+            {
+                "id": i,
+                "title": (job.get("title") or "")[:120],
+                "company": (job.get("company") or "")[:80],
+                "location": (job.get("location") or "")[:80],
+                "description": _clip(job.get("description") or "", 400),
+            }
+        )
+
+    scorer = _llm(
+        temperature=0,
+        max_tokens=min(1200, 80 + 40 * len(items)),
+        model=config.MATCH_SCORE_MODEL,
+    )
+    try:
+        response = scorer.invoke(
+            f"""Score how well this candidate matches EACH job (0-100).
+Use resume skills/experience PLUS preference alignment (target roles, locations, goals).
+Return ONLY a JSON array:
+[{{"id": 0, "score": 78}}, ...]
+One entry per job id. Be honest — not every role is a great fit.
+
+PREFS:
+- target_roles: {prefs.get("target_roles") or ""}
+- locations: {prefs.get("locations") or ""}
+- goals: {prefs.get("goals") or ""}
+
+RESUME:
+{resume}
+
+JOBS:
+{json.dumps(items, ensure_ascii=False)}
+"""
+        )
+        data = _extract_json_payload(response.content or "")
+    except Exception:
+        data = None
+
+    scores: dict[str, int] = {}
+    if isinstance(data, dict) and isinstance(data.get("scores"), list):
+        data = data["scores"]
+    if isinstance(data, list):
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            idx = row.get("id")
+            score = _clamp_score(row.get("score"))
+            if score is None or not isinstance(idx, int) or idx < 0 or idx >= len(keys):
+                continue
+            scores[keys[idx]] = score
+
+    # Fill any misses with heuristic so UI always has a number when resume exists
+    for i, key in enumerate(keys):
+        if key not in scores:
+            scores[key] = _heuristic_match_score(jobs[i], resume, prefs)
+    return scores
+
+
 @tool
 @traceable(name="score_job_fit", run_type="tool")
 def score_job_fit(
@@ -210,39 +429,15 @@ def score_job_fit(
         job_description: Optional full or partial job description text.
         resume_text: Leave empty. Uploaded resume is injected automatically.
     """
-    resume = _clip(_resolve_resume(resume_text), config.RESUME_TOOL_CHARS)
-    if not resume:
+    data = compute_job_fit(
+        job_title,
+        company,
+        job_description=job_description,
+        resume_text=resume_text,
+    )
+    if data is None:
         return "No resume on file. Ask the user to upload one in Settings."
-
-    jd = _clip(
-        (job_description or "").strip()
-        or f"{job_title} role at {company}. Score using the resume and general expectations for this title.",
-        2500,
-    )
-
-    scorer = _llm(temperature=0, max_tokens=500)
-    response = scorer.invoke(
-        f"""Compare this resume to this job. Return ONLY valid JSON with this shape:
-{{
-  "score": <integer 0-100>,
-  "summary": "<1-2 sentences>",
-  "strengths": ["..."],
-  "gaps": ["..."],
-  "rewrite_tips": ["..."]
-}}
-
-Be honest and specific. Score based on skills, experience, and role fit.
-
-RESUME:
-{resume}
-
-JOB:
-{job_title} at {company}
-
-{jd}
-"""
-    )
-    return _wrap_internal("JOB_FIT", response.content or "")
+    return _wrap_internal("JOB_FIT", json.dumps(data))
 
 
 @tool
@@ -362,11 +557,9 @@ JOB:
     return _wrap_internal("COVER_LETTER", response.content or "")
 
 
+# Chat agent is advice-only: cover letters + coaching. Job search and resume
+# rewrite stay defined for other surfaces but are not bound to the chat agent.
 TOOLS = [
-    search_web,
-    search_indeed,
-    score_job_fit,
-    rewrite_resume,
     cover_letter_generator,
 ]
 

@@ -1,42 +1,42 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
+import PlanTiles from "../components/PlanTiles";
+import { PLANS_FALLBACK, resolvePlansPayload } from "../plansFallback";
 
 export default function PlansPage() {
- const [plans, setPlans] = useState([]);
+  const [plans, setPlans] = useState(PLANS_FALLBACK.plans);
+  const [note, setNote] = useState(PLANS_FALLBACK.note);
 
- useEffect(() => {
- api("/api/plans").then((data) => setPlans(data.plans || []));
- }, []);
+  useEffect(() => {
+    api("/api/plans")
+      .then((data) => {
+        const next = resolvePlansPayload(data);
+        setPlans(next.plans);
+        setNote(next.note);
+      })
+      .catch(() => {
+        setPlans(PLANS_FALLBACK.plans);
+        setNote(PLANS_FALLBACK.note);
+      });
+  }, []);
 
- return (
- <div>
- <div className="page-head">
- <div>
- <h1>Plans</h1>
- <p>Everything is TBA for now. Free tier is what you’re on.</p>
- </div>
- </div>
+  return (
+    <div>
+      <div className="page-title">
+        <div>
+          <h1>Plans</h1>
+          <p>{note}</p>
+        </div>
+      </div>
 
- <div className="grid-3">
- {plans.map((plan) => (
- <article className="plan-card" key={plan.id}>
- <span className="badge">TBA</span>
- <h3 style={{ marginTop: "0.6rem" }}>{plan.name}</h3>
- <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "var(--navy)" }}>
- {plan.price}
- </div>
- <p className="muted">{plan.blurb}</p>
- <ul>
- {(plan.features || []).map((f, i) => (
- <li key={i}>{f}</li>
- ))}
- </ul>
- <button className="btn btn-dark btn-wide" disabled>
- Coming soon
- </button>
- </article>
- ))}
- </div>
- </div>
- );
+      <PlanTiles plans={plans} />
+
+      <div style={{ marginTop: "1.5rem" }}>
+        <Link className="btn btn-ghost" to="/pricing">
+          Open public pricing
+        </Link>
+      </div>
+    </div>
+  );
 }

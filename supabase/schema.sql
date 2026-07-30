@@ -9,9 +9,13 @@ create table if not exists public.profiles (
   goals text default '',
   resume_text text default '',
   resume_filename text default '',
+  plan text default 'free',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Existing DBs created before plan was added:
+alter table public.profiles add column if not exists plan text default 'free';
 
 create table if not exists public.chats (
   id uuid primary key default gen_random_uuid(),

@@ -1,0 +1,882 @@
+{
+  "roles": {
+    "software_engineer": {
+      "aliases": [
+        "software engineer",
+        "swe",
+        "software developer",
+        "backend",
+        "backend engineer",
+        "frontend",
+        "frontend engineer",
+        "full stack",
+        "fullstack",
+        "full-stack engineer",
+        "web developer",
+        "engineer",
+        "staff engineer",
+        "senior software engineer"
+      ],
+      "questions": [
+        {
+          "question": "In a behavioral interview, what is the strongest STAR structure for \"Tell me about a production incident you owned\"?",
+          "options": [
+            "Jump to the fix first, then briefly mention monitoring",
+            "Situation/Task → what you did → measurable Result, with ownership clear",
+            "List every teammate's contribution before yours",
+            "Focus only on the root-cause theory without actions"
+          ],
+          "correct_index": 1,
+          "explanation": "Interviewers want clear ownership and outcome. STAR keeps Situation/Task, your Actions, and a concrete Result."
+        },
+        {
+          "question": "A teammate ships a PR that breaks an API contract used by three clients. What is the most professional first response?",
+          "options": [
+            "Revert immediately without communicating",
+            "Ignore it until Monday standup",
+            "Stabilize/rollback if needed, notify stakeholders, then root-cause with the author",
+            "Rewrite the clients yourself without telling anyone"
+          ],
+          "correct_index": 2,
+          "explanation": "Protect users first, communicate early, then partner on the fix — that signals senior judgment."
+        },
+        {
+          "question": "Which answer best shows system design thinking for a high-read feed?",
+          "options": [
+            "Put everything in one giant SQL table and cache nothing",
+            "Discuss latency/consistency tradeoffs, caching, partitioning, and failure modes",
+            "Only mention the UI framework you prefer",
+            "Say you would \"use microservices\" with no further detail"
+          ],
+          "correct_index": 1,
+          "explanation": "Strong design answers name constraints, tradeoffs, and failure handling — not buzzwords alone."
+        },
+        {
+          "question": "How should you discuss a technical disagreement with a senior engineer?",
+          "options": [
+            "Escalate to HR immediately",
+            "Stay silent to avoid conflict",
+            "Share data/risks calmly, propose an experiment, and align on decision criteria",
+            "Implement your approach secretly"
+          ],
+          "correct_index": 2,
+          "explanation": "Hiring managers look for collaborative conflict skills: evidence, options, and shared decision criteria."
+        },
+        {
+          "question": "What is the best way to talk about a project that slipped deadlines?",
+          "options": [
+            "Blame another team and move on",
+            "Claim there were no issues",
+            "Own the miss, what you changed in process, and the later outcome",
+            "Say deadlines never matter in software"
+          ],
+          "correct_index": 2,
+          "explanation": "Mature candidates own misses, show learning, and connect to improved delivery."
+        },
+        {
+          "question": "When asked \"How do you debug an intermittent production bug?\", the strongest answer emphasizes:",
+          "options": [
+            "Guessing and redeploying until it stops",
+            "Reproducing safely, gathering signals (logs/metrics/traces), isolating variables, verifying the fix",
+            "Only reading Stack Overflow",
+            "Waiting for users to report more details forever"
+          ],
+          "correct_index": 1,
+          "explanation": "A disciplined debug loop — reproduce, observe, isolate, verify — is what interviewers expect."
+        }
+      ]
+    },
+    "product_manager": {
+      "aliases": [
+        "product manager",
+        "pm",
+        "product",
+        "associate product manager",
+        "apm",
+        "product owner",
+        "ai pm",
+        "technical product manager"
+      ],
+      "questions": [
+        {
+          "question": "A stakeholder wants a feature that conflicts with the roadmap. Best response?",
+          "options": [
+            "Agree immediately to keep peace",
+            "Refuse without explanation",
+            "Clarify the problem, impact, and tradeoffs; decide with shared goals/metrics",
+            "Build a secret prototype and surprise them"
+          ],
+          "correct_index": 2,
+          "explanation": "PMs earn trust by reframing requests around outcomes and explicit tradeoffs."
+        },
+        {
+          "question": "Which prioritization story sounds strongest in an interview?",
+          "options": [
+            "I shipped whatever engineering preferred",
+            "I used impact vs effort (or similar) tied to a clear north-star metric",
+            "I prioritized based on the loudest customer",
+            "I avoided prioritization and did everything"
+          ],
+          "correct_index": 1,
+          "explanation": "Show a repeatable framework linked to outcomes, not politics or volume of requests."
+        },
+        {
+          "question": "How do you handle a launch that missed adoption targets?",
+          "options": [
+            "Blame marketing and end the story",
+            "Hide the metrics",
+            "Diagnose with data/qual, share learnings, and adjust the next experiment",
+            "Ship more features immediately with no analysis"
+          ],
+          "correct_index": 2,
+          "explanation": "Strong PMs treat misses as learning loops with evidence and next bets."
+        },
+        {
+          "question": "\"How do you work with design and engineering?\" Best signal:",
+          "options": [
+            "I write specs and disappear",
+            "I partner on problem framing, constraints, and success criteria throughout delivery",
+            "I only talk to executives",
+            "I override design decisions by default"
+          ],
+          "correct_index": 1,
+          "explanation": "Cross-functional partnership and shared criteria beat throw-over-the-wall specs."
+        },
+        {
+          "question": "When defining MVP scope, you should primarily optimize for:",
+          "options": [
+            "Maximum feature count",
+            "Learning the riskiest assumption with the smallest shippable slice",
+            "Perfect visual polish before any users",
+            "Matching a competitor pixel-for-pixel"
+          ],
+          "correct_index": 1,
+          "explanation": "MVP is about learning critical assumptions fast, not shipping everything."
+        }
+      ]
+    },
+    "data": {
+      "aliases": [
+        "data scientist",
+        "data analyst",
+        "data engineer",
+        "ml engineer",
+        "machine learning",
+        "analytics",
+        "bi analyst",
+        "research scientist"
+      ],
+      "questions": [
+        {
+          "question": "A stakeholder asks for a causal claim from observational data. Best reply?",
+          "options": [
+            "Confirm causation immediately",
+            "Explain correlation vs causation, caveats, and what experiment/design would strengthen the claim",
+            "Refuse to analyze anything",
+            "Only show a prettier chart"
+          ],
+          "correct_index": 1,
+          "explanation": "Credibility comes from honest inference limits plus a path to stronger evidence."
+        },
+        {
+          "question": "How should you present a model that underperforms on a key segment?",
+          "options": [
+            "Hide the segment metrics",
+            "Surface the gap, hypothesize causes, and propose mitigation or scoping",
+            "Ship anyway silently",
+            "Blame the data team and stop"
+          ],
+          "correct_index": 1,
+          "explanation": "Interviewers want transparency and a remediation plan, not vanity averages."
+        },
+        {
+          "question": "Strongest A/B test answer includes:",
+          "options": [
+            "Only the p-value",
+            "Hypothesis, metric, sample/power considerations, and how you'd act on results",
+            "Changing the metric after seeing results",
+            "Running until you get significance with no plan"
+          ],
+          "correct_index": 1,
+          "explanation": "Experiment design + decision rule beats fishing for significance."
+        },
+        {
+          "question": "When requirements are vague, a data professional should:",
+          "options": [
+            "Build the biggest dashboard possible",
+            "Clarify the decision the analysis should inform, then scope data and methods",
+            "Wait indefinitely",
+            "Pick a random KPI"
+          ],
+          "correct_index": 1,
+          "explanation": "Start from the decision; methods follow the question."
+        },
+        {
+          "question": "Best way to discuss a modeling tradeoff (accuracy vs latency)?",
+          "options": [
+            "Always maximize accuracy",
+            "Always maximize latency",
+            "Tie the choice to product constraints and user impact",
+            "Avoid tradeoffs in interviews"
+          ],
+          "correct_index": 2,
+          "explanation": "Context-aware tradeoffs show product sense alongside technical skill."
+        }
+      ]
+    },
+    "design": {
+      "aliases": [
+        "product designer",
+        "ux designer",
+        "ui designer",
+        "designer",
+        "ux researcher",
+        "design lead"
+      ],
+      "questions": [
+        {
+          "question": "A PM pushes a solution before problem definition. Best move?",
+          "options": [
+            "Design exactly what they asked with no questions",
+            "Reframe to user problem, constraints, and success criteria before high-fidelity work",
+            "Escalate angrily in Slack",
+            "Ignore the request"
+          ],
+          "correct_index": 1,
+          "explanation": "Design craft starts with problem framing and shared success criteria."
+        },
+        {
+          "question": "How do you justify a design decision in an interview?",
+          "options": [
+            "\"It looked cooler\"",
+            "User evidence, constraints, alternatives considered, and outcome/metrics if known",
+            "Only cite a trendy pattern",
+            "Say stakeholders always decide"
+          ],
+          "correct_index": 1,
+          "explanation": "Critique-ready answers connect evidence → options → choice → impact."
+        },
+        {
+          "question": "Usability test shows users miss a primary CTA. Next step?",
+          "options": [
+            "Ship anyway",
+            "Diagnose hierarchy/copy/placement, iterate, and re-test the change",
+            "Add five more CTAs",
+            "Blame users"
+          ],
+          "correct_index": 1,
+          "explanation": "Close the loop: insight → change → validation."
+        },
+        {
+          "question": "Working with engineers on feasibility, you should:",
+          "options": [
+            "Hand off final mocks and disappear",
+            "Collaborate early on constraints and phased delivery without abandoning UX goals",
+            "Refuse any compromise",
+            "Only talk through Figma comments after launch"
+          ],
+          "correct_index": 1,
+          "explanation": "Partnership and phased quality beat late surprises."
+        },
+        {
+          "question": "Portfolio storytelling is strongest when you show:",
+          "options": [
+            "Only pretty final screens",
+            "Problem, process, tradeoffs, your role, and measurable or qualitative impact",
+            "Every discarded pixel equally",
+            "Only team wins with no personal contribution"
+          ],
+          "correct_index": 1,
+          "explanation": "Interviewers hire for process and impact, not polish alone."
+        }
+      ]
+    },
+    "marketing": {
+      "aliases": [
+        "marketing",
+        "growth",
+        "growth marketer",
+        "content marketer",
+        "product marketing",
+        "pmm",
+        "demand gen"
+      ],
+      "questions": [
+        {
+          "question": "A channel's CAC rises sharply. Strongest response?",
+          "options": [
+            "Double spend to \"push through\"",
+            "Pause blindly forever",
+            "Diagnose creative/audience/landing, run controlled tests, reallocate to efficient channels",
+            "Ignore CAC and optimize vanity metrics"
+          ],
+          "correct_index": 2,
+          "explanation": "Growth interviews reward diagnosis + experimentation + reallocation."
+        },
+        {
+          "question": "How should you talk about a campaign that failed?",
+          "options": [
+            "Deny it happened",
+            "Own hypothesis, what the data showed, and what you changed next",
+            "Blame the designer only",
+            "Say marketing can't be measured"
+          ],
+          "correct_index": 1,
+          "explanation": "Learning velocity matters more than a perfect win rate."
+        },
+        {
+          "question": "Best positioning answer includes:",
+          "options": [
+            "A long feature list",
+            "Audience, problem, differentiated value, and proof",
+            "Only competitor insults",
+            "Internal jargon nobody outside knows"
+          ],
+          "correct_index": 1,
+          "explanation": "Clear audience → problem → value → proof is classic PMM/growth craft."
+        },
+        {
+          "question": "When sales and marketing disagree on messaging, you should:",
+          "options": [
+            "Pick randomly",
+            "Align on ICP and objections with shared messaging tests",
+            "Let whoever shouts loudest win",
+            "Create two conflicting sites"
+          ],
+          "correct_index": 1,
+          "explanation": "Shared ICP and tested messaging beat internal politics."
+        },
+        {
+          "question": "A strong growth interview metric story ties activity to:",
+          "options": [
+            "Impressions only",
+            "A funnel outcome (activation, retention, revenue) and the lever you moved",
+            "Number of Slack messages sent",
+            "Tools used, not outcomes"
+          ],
+          "correct_index": 1,
+          "explanation": "Connect work to funnel outcomes and the specific lever you owned."
+        }
+      ]
+    },
+    "sales": {
+      "aliases": [
+        "sales",
+        "account executive",
+        "ae",
+        "sdr",
+        "bdr",
+        "account manager",
+        "business development",
+        "sales rep"
+      ],
+      "questions": [
+        {
+          "question": "A prospect goes quiet after a strong discovery call. Strongest next move?",
+          "options": [
+            "Send one long guilt email and wait forever",
+            "Break up with a short value-led nudge, offer a clear next step, and multi-thread if appropriate",
+            "Discount 50% immediately with no ask",
+            "Call their CEO without context"
+          ],
+          "correct_index": 1,
+          "explanation": "Good sellers re-engage with relevance and a concrete CTA — not pressure or random escalation."
+        },
+        {
+          "question": "Best way to handle a pricing objection mid-cycle?",
+          "options": [
+            "Defend list price with no questions",
+            "Immediately match the competitor's number",
+            "Clarify the business case, quantify value vs cost, then negotiate tradeoffs",
+            "Ignore it and demo more features"
+          ],
+          "correct_index": 2,
+          "explanation": "Interviewers want discovery behind the objection and value before discounting."
+        },
+        {
+          "question": "How should you talk about missing quota in an interview?",
+          "options": [
+            "Blame marketing and product only",
+            "Own the miss, show pipeline diagnosis, and the process changes that improved later results",
+            "Claim quota was unfair and move on",
+            "Say you never miss"
+          ],
+          "correct_index": 1,
+          "explanation": "Mature sales answers own outcomes, diagnose pipeline, and show learning."
+        },
+        {
+          "question": "Strong discovery focuses most on:",
+          "options": [
+            "A feature tour before asking anything",
+            "Pain, impact, stakeholders, timeline, and decision criteria",
+            "Only personal rapport with no business context",
+            "Competitor bashing"
+          ],
+          "correct_index": 1,
+          "explanation": "MEDDIC-style clarity — pain, impact, buyers, timing — beats premature pitching."
+        }
+      ]
+    },
+    "customer_success": {
+      "aliases": [
+        "customer success",
+        "csm",
+        "customer success manager",
+        "account management",
+        "client success",
+        "retention"
+      ],
+      "questions": [
+        {
+          "question": "An account's product usage drops sharply before renewal. Best first response?",
+          "options": [
+            "Wait until renewal week to ask why",
+            "Investigate health signals, reach out with a hypothesis, and co-build an adoption plan",
+            "Offer a discount with no diagnosis",
+            "Escalate to legal immediately"
+          ],
+          "correct_index": 1,
+          "explanation": "CS interviews reward early detection, structured outreach, and joint remediation."
+        },
+        {
+          "question": "How do you handle an angry escalation from a champion?",
+          "options": [
+            "Argue that the product is fine",
+            "Acknowledge impact, confirm facts, set a recovery plan with owners and dates, then follow through",
+            "CC the whole company in a defensive thread",
+            "Go silent until they calm down"
+          ],
+          "correct_index": 1,
+          "explanation": "Empathy + ownership + a concrete recovery plan is the CS standard."
+        },
+        {
+          "question": "A strong QBR should emphasize:",
+          "options": [
+            "Only feature release notes",
+            "Outcomes vs goals, risks, expansion opportunities, and next-quarter commitments",
+            "A long product roadmap dump with no customer context",
+            "Internal team gossip"
+          ],
+          "correct_index": 1,
+          "explanation": "QBRs tie value delivered to goals and set clear forward commitments."
+        },
+        {
+          "question": "When asked about reducing churn, the strongest answer names:",
+          "options": [
+            "Sending more generic emails",
+            "Leading indicators you watched, interventions you ran, and retention impact",
+            "Hoping customers renew on their own",
+            "Blaming sales for bad-fit deals only"
+          ],
+          "correct_index": 1,
+          "explanation": "Show signals → actions → measurable retention outcomes."
+        }
+      ]
+    },
+    "finance": {
+      "aliases": [
+        "finance",
+        "accounting",
+        "fp&a",
+        "fpa",
+        "financial analyst",
+        "controller",
+        "accountant",
+        "finance / accounting"
+      ],
+      "questions": [
+        {
+          "question": "A forecast suddenly misses plan. Strongest FP&A response?",
+          "options": [
+            "Hide the variance until quarter close",
+            "Explain drivers, quantify impact, and propose actionable levers with owners",
+            "Blame one team with no analysis",
+            "Change the target retroactively"
+          ],
+          "correct_index": 1,
+          "explanation": "Finance partners diagnose drivers and recommend decisions — not surprise stakeholders."
+        },
+        {
+          "question": "When presenting to non-finance leaders, you should:",
+          "options": [
+            "Lead with jargon and raw ledger lines",
+            "Translate variance into business decisions, risks, and clear asks",
+            "Only email a spreadsheet with no narrative",
+            "Avoid recommendations to stay \"neutral\""
+          ],
+          "correct_index": 1,
+          "explanation": "Business partnership means insight and asks, not just numbers."
+        },
+        {
+          "question": "Best way to discuss a material accounting error you found?",
+          "options": [
+            "Quietly fix it without documentation",
+            "Escalate with impact, root cause, controls gap, and remediation steps",
+            "Ignore it if under a round number",
+            "Blame the auditor first"
+          ],
+          "correct_index": 1,
+          "explanation": "Integrity + control remediation is what finance interviews screen for."
+        },
+        {
+          "question": "A good budget vs actual review focuses on:",
+          "options": [
+            "Every line item equally with no priorities",
+            "Material variances, drivers, and whether the business should course-correct",
+            "Formatting the slides only",
+            "Last year's budget copied forward"
+          ],
+          "correct_index": 1,
+          "explanation": "Materiality and decision relevance beat exhaustive noise."
+        }
+      ]
+    },
+    "operations": {
+      "aliases": [
+        "operations",
+        "ops",
+        "business operations",
+        "bizops",
+        "chief of staff",
+        "operations manager",
+        "supply chain"
+      ],
+      "questions": [
+        {
+          "question": "A cross-functional process keeps slipping SLAs. Strongest ops move?",
+          "options": [
+            "Add more meetings with no owners",
+            "Map the bottleneck, define owners/SLAs, and instrument a simple metric loop",
+            "Blame the slowest team publicly",
+            "Rewrite the org chart immediately"
+          ],
+          "correct_index": 1,
+          "explanation": "Ops interviews reward diagnosis, clear ownership, and measurable process fixes."
+        },
+        {
+          "question": "How should you prioritize competing stakeholder requests?",
+          "options": [
+            "First-in, first-out always",
+            "Align on impact, effort, risk, and a shared decision rubric",
+            "Whoever escalates loudest wins",
+            "Do everything in parallel with no tradeoffs"
+          ],
+          "correct_index": 1,
+          "explanation": "Transparent prioritization frameworks beat politics."
+        },
+        {
+          "question": "When a vendor underperforms, best approach?",
+          "options": [
+            "Renew automatically to avoid conflict",
+            "Document gaps vs contract, escalate with data, and run a remediation or exit plan",
+            "Post publicly without internal alignment",
+            "Ignore it until the next RFP cycle"
+          ],
+          "correct_index": 1,
+          "explanation": "Vendor management is evidence-based and contractual, not passive."
+        },
+        {
+          "question": "A strong ops interview story ties process change to:",
+          "options": [
+            "More Slack channels created",
+            "Cycle time, quality, cost, or reliability outcomes",
+            "Tools purchased with no adoption",
+            "Headcount alone"
+          ],
+          "correct_index": 1,
+          "explanation": "Connect interventions to operational outcomes, not activity."
+        }
+      ]
+    },
+    "hr_recruiting": {
+      "aliases": [
+        "hr",
+        "recruiting",
+        "recruiter",
+        "talent acquisition",
+        "people ops",
+        "human resources",
+        "hr / recruiting",
+        "sourcer"
+      ],
+      "questions": [
+        {
+          "question": "A hiring manager wants to skip structured interviews. Best response?",
+          "options": [
+            "Agree — speed always wins",
+            "Explain bias/quality risks and propose a lightweight structured loop that still moves fast",
+            "Escalate to the CEO immediately",
+            "Secretly interview candidates anyway"
+          ],
+          "correct_index": 1,
+          "explanation": "TA partners protect quality and fairness while staying pragmatic on speed."
+        },
+        {
+          "question": "Pipeline is full but offer accept rate is low. Strongest diagnosis starts with:",
+          "options": [
+            "Only posting more jobs",
+            "Offer competitiveness, process experience, role clarity, and competing alternatives",
+            "Blaming candidates for being picky",
+            "Lowering the bar silently"
+          ],
+          "correct_index": 1,
+          "explanation": "Conversion problems need funnel diagnosis, not more top-of-funnel noise."
+        },
+        {
+          "question": "How do you handle a sensitive employee-relations issue?",
+          "options": [
+            "Discuss it in a public Slack channel",
+            "Follow policy, document carefully, stay confidential, and involve the right partners",
+            "Take a side based on friendship",
+            "Ignore it hoping it resolves"
+          ],
+          "correct_index": 1,
+          "explanation": "ER maturity is confidentiality, process, and fairness."
+        },
+        {
+          "question": "A strong recruiting metric story connects activity to:",
+          "options": [
+            "InMails sent only",
+            "Quality-of-hire or time-to-fill outcomes and the lever you changed",
+            "Number of coffee chats with no hires",
+            "ATS features used"
+          ],
+          "correct_index": 1,
+          "explanation": "Show the lever and the hiring outcome, not vanity activity."
+        }
+      ]
+    },
+    "devops": {
+      "aliases": [
+        "devops",
+        "sre",
+        "site reliability",
+        "platform engineer",
+        "infrastructure",
+        "devops / sre",
+        "reliability engineer"
+      ],
+      "questions": [
+        {
+          "question": "Production error rate spikes after a deploy. Best first response?",
+          "options": [
+            "Start a redesign of the whole system",
+            "Mitigate (rollback/feature flag), communicate, then root-cause with data",
+            "Wait to see if it self-heals overnight",
+            "Blame the on-call from last week"
+          ],
+          "correct_index": 1,
+          "explanation": "SRE judgment: stabilize first, then learn — with clear comms."
+        },
+        {
+          "question": "Which answer best shows CI/CD maturity?",
+          "options": [
+            "Manual Friday deploys with no tests",
+            "Automated tests, progressive delivery, fast rollback, and measurable change failure rate",
+            "\"We use Kubernetes\" with no pipeline detail",
+            "Hotfixes straight to prod as the default path"
+          ],
+          "correct_index": 1,
+          "explanation": "Interviewers want safety + speed: automation, progressive delivery, rollback."
+        },
+        {
+          "question": "How should you discuss an on-call incident you owned?",
+          "options": [
+            "Focus only on heroics without prevention",
+            "Timeline, mitigation, customer impact, and lasting fixes (runbooks/alerts/tests)",
+            "Say incidents are someone else's problem",
+            "Hide the severity"
+          ],
+          "correct_index": 1,
+          "explanation": "Strong SRE stories include mitigation and durable prevention."
+        },
+        {
+          "question": "When reliability and product velocity conflict, you should:",
+          "options": [
+            "Block all changes forever",
+            "Quantify risk/SLO impact and negotiate guardrails (flags, canaries, error budgets)",
+            "Ignore SLOs to ship faster",
+            "Only escalate without options"
+          ],
+          "correct_index": 1,
+          "explanation": "Error budgets and progressive delivery let teams negotiate speed vs safety."
+        }
+      ]
+    },
+    "cybersecurity": {
+      "aliases": [
+        "cybersecurity",
+        "security",
+        "infosec",
+        "security engineer",
+        "soc",
+        "appsec",
+        "security analyst"
+      ],
+      "questions": [
+        {
+          "question": "You find a critical vulnerability in production. Strongest response?",
+          "options": [
+            "Post full exploit details publicly first",
+            "Assess impact, contain risk, notify stakeholders, patch/mitigate, then document lessons",
+            "Ignore it if no known exploit yet",
+            "Only file a ticket with no urgency"
+          ],
+          "correct_index": 1,
+          "explanation": "Security interviews expect triage, containment, communication, and remediation."
+        },
+        {
+          "question": "Best way to talk about balancing security and developer velocity?",
+          "options": [
+            "Block every change by default",
+            "Risk-based controls, secure defaults, and automation in the pipeline",
+            "Skip reviews to go faster",
+            "Security only after launch forever"
+          ],
+          "correct_index": 1,
+          "explanation": "Modern security partners enable speed with risk-based, automated guardrails."
+        },
+        {
+          "question": "A phishing campaign succeeds against several employees. Next priority?",
+          "options": [
+            "Shame them in all-hands",
+            "Contain accounts, investigate scope, reset access, and improve detection/training",
+            "Assume nothing else is wrong",
+            "Only delete the emails"
+          ],
+          "correct_index": 1,
+          "explanation": "Incident response is contain → investigate → recover → harden."
+        },
+        {
+          "question": "Strong security interview answers emphasize:",
+          "options": [
+            "Tools alone with no threat model",
+            "Assets, threats, likelihood/impact, and proportionate controls",
+            "Buzzwords without tradeoffs",
+            "Absolute security with infinite budget"
+          ],
+          "correct_index": 1,
+          "explanation": "Threat modeling and proportionate controls beat tool laundry lists."
+        }
+      ]
+    },
+    "content": {
+      "aliases": [
+        "content",
+        "writing",
+        "content writer",
+        "copywriter",
+        "content strategist",
+        "editorial",
+        "content / writing",
+        "technical writer"
+      ],
+      "questions": [
+        {
+          "question": "A piece underperforms after publish. Strongest response?",
+          "options": [
+            "Delete it and never measure again",
+            "Diagnose audience/intent/distribution, revise the angle or CTA, and retest",
+            "Double the word count immediately",
+            "Blame SEO forever with no experiments"
+          ],
+          "correct_index": 1,
+          "explanation": "Content craft pairs judgment with iteration on intent and distribution."
+        },
+        {
+          "question": "How should you handle conflicting stakeholder feedback on a draft?",
+          "options": [
+            "Incorporate every comment literally",
+            "Align on audience goal and success metric, then resolve conflicts against that brief",
+            "Ignore everyone and publish secretly",
+            "Rewrite from scratch each time with no brief"
+          ],
+          "correct_index": 1,
+          "explanation": "A shared brief and outcome metric beats opinion wars."
+        },
+        {
+          "question": "Best content interview portfolio story includes:",
+          "options": [
+            "Only pretty screenshots",
+            "Goal, audience, constraints, your choices, and measurable results",
+            "A list of tools with no outcomes",
+            "Ghostwritten work you can't discuss"
+          ],
+          "correct_index": 1,
+          "explanation": "Show decision-making and impact, not just artifacts."
+        },
+        {
+          "question": "When asked about SEO vs brand voice, you should:",
+          "options": [
+            "Keyword-stuff until unreadable",
+            "Serve search intent while protecting clarity and brand voice",
+            "Ignore SEO entirely",
+            "Copy competitors word-for-word"
+          ],
+          "correct_index": 1,
+          "explanation": "Strong writers balance discoverability with readable brand voice."
+        }
+      ]
+    },
+    "general": {
+      "aliases": ["general", "any", "career", "professional"],
+      "questions": [
+        {
+          "question": "\"Tell me about yourself\" works best when you:",
+          "options": [
+            "Recite your entire resume chronologically with no point",
+            "Give a concise present-past-future pitch tied to this role",
+            "Only talk about hobbies",
+            "Say \"I don't know where to start\""
+          ],
+          "correct_index": 1,
+          "explanation": "A tight narrative aimed at the job beats an unfocused autobiography."
+        },
+        {
+          "question": "When you don't know an answer in an interview, best move?",
+          "options": [
+            "Bluff confidently with fake facts",
+            "Stay silent",
+            "Admit the gap, reason aloud, and describe how you'd find the answer",
+            "Change the subject to salary"
+          ],
+          "correct_index": 2,
+          "explanation": "Honesty plus structured reasoning beats confident nonsense."
+        },
+        {
+          "question": "Strongest way to ask questions at the end?",
+          "options": [
+            "\"No questions\"",
+            "Ask about success criteria, team challenges, and how the role creates impact",
+            "Only ask about vacation policy",
+            "Ask questions you could have Googled in 10 seconds"
+          ],
+          "correct_index": 1,
+          "explanation": "Thoughtful role/impact questions signal seriousness and preparation."
+        },
+        {
+          "question": "Describing a conflict with a coworker, avoid:",
+          "options": [
+            "Focusing on the problem and resolution",
+            "Personal attacks and absolute blame",
+            "What you learned",
+            "How you communicated"
+          ],
+          "correct_index": 1,
+          "explanation": "Interviewers flag blame-heavy stories; show maturity and resolution."
+        },
+        {
+          "question": "How do you show leadership without a manager title?",
+          "options": [
+            "Claim you led everything alone",
+            "Cite influence: unblocking, mentoring, driving decisions with evidence",
+            "Say you never lead",
+            "Only list tools you used"
+          ],
+          "correct_index": 1,
+          "explanation": "Leadership is influence and ownership, not only org-chart power."
+        }
+      ]
+    }
+  }
+}

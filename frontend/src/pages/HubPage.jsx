@@ -14,14 +14,81 @@ function jobKey(job) {
   return job.url || `${job.title || ""}|${job.company || ""}|${job.location || ""}`;
 }
 
+/** Highest match_score first; null/missing last. */
+function byMatchScoreDesc(a, b) {
+  const sa = a?.match_score;
+  const sb = b?.match_score;
+  const aNull = sa == null || Number.isNaN(Number(sa));
+  const bNull = sb == null || Number.isNaN(Number(sb));
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  return Number(sb) - Number(sa);
+}
+
+function sortRecommended(jobs) {
+  return [...(jobs || [])].sort(byMatchScoreDesc);
+}
+
 function ensureJobUrl(job) {
   const url = (job?.url || "").trim();
   if (url) return url;
   return `job://${jobKey(job)}`;
 }
 
+function roleTag(job, profile) {
+  const fromJob =
+    (Array.isArray(job?.job_type) ? job.job_type[0] : job?.job_type) ||
+    "";
+  if (String(fromJob).trim()) return String(fromJob).trim().split(",")[0].trim();
+  const roles = (profile?.target_roles || "").split(",")[0].trim();
+  if (roles) return roles;
+  const title = (job?.title || "").trim();
+  if (!title) return "Role";
+  // short label from title (drop seniority prefixes)
+  return title
+    .replace(/^(senior|junior|staff|principal|lead|sr\.?|jr\.?)\s+/i, "")
+    .split(/[|\-–—]/)[0]
+    .trim()
+    .slice(0, 28) || "Role";
+}
+
+function MatchRing({ score, needsResume }) {
+  const hasScore = score != null && !Number.isNaN(Number(score));
+  if (!hasScore && !needsResume) return null;
+
+  if (!hasScore) {
+    return (
+      <span className="jobs-match jobs-match-empty" title="Upload a resume to see AI match %">
+        <span className="jobs-match-ring jobs-match-ring-empty" aria-hidden="true" />
+        <span className="jobs-match-hint">Upload resume for match %</span>
+      </span>
+    );
+  }
+  const pct = Math.max(0, Math.min(100, Math.round(Number(score))));
+  const r = 10;
+  const c = 2 * Math.PI * r;
+  const offset = c - (pct / 100) * c;
+  return (
+    <span className="jobs-match" title={`${pct}% AI match`}>
+      <svg className="jobs-match-ring" viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+        <circle className="jobs-match-track" cx="14" cy="14" r={r} />
+        <circle
+          className="jobs-match-fill"
+          cx="14"
+          cy="14"
+          r={r}
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+        />
+      </svg>
+      <span className="jobs-match-pct">{pct}%</span>
+    </span>
+  );
+}
+
 function applyHubData(data, setters) {
-  const recommended = data.recommended || data.jobs || [];
+  const recommended = sortRecommended(data.recommended || data.jobs || []);
   const liked = data.liked || [];
   const applied = data.applied || [];
   const external = data.external || [];
@@ -43,7 +110,9 @@ export default function HubPage({ profile }) {
   const cached = getCachedJobs(profile);
   const [tab, setTab] = useState("recommended");
   const [query, setQuery] = useState("");
-  const [recommended, setRecommended] = useState(() => cached?.recommended || cached?.jobs || []);
+  const [recommended, setRecommended] = useState(() =>
+    sortRecommended(cached?.recommended || cached?.jobs || [])
+  );
   const [liked, setLiked] = useState(() => cached?.liked || []);
   const [applied, setApplied] = useState(() => cached?.applied || []);
   const [external, setExternal] = useState(() => cached?.external || []);
@@ -60,9 +129,12 @@ export default function HubPage({ profile }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(!cached);
   const [saving, setSaving] = useState(false);
+  const [limits, setLimits] = useState(() => cached?.limits || null);
 
   const roleLabel = (profile?.target_roles || "").trim() || "your preferences";
   const locationLabel = (profile?.locations || "").trim();
+  const refreshWait = Number(limits?.refresh_wait_seconds || 0);
+  const refreshLocked = refreshWait > 0;
 
   const setters = {
     setRecommended,
@@ -74,12 +146,19 @@ export default function HubPage({ profile }) {
 
   async function loadHub({ force = false } = {}) {
     if (!(profile?.target_roles || "").trim()) return;
+    if (force && refreshLocked) {
+      setError(
+        `Free tier refreshes once per hour. Try again in ${Math.ceil(refreshWait / 60)} min — or upgrade for faster scrapes.`
+      );
+      return;
+    }
     const hadCache = Boolean(getCachedJobs(profile)) && !force;
     if (!hadCache) setBusy(true);
     setError("");
     try {
       const data = await loadJobs(profile, { force });
       applyHubData(data, setters);
+      if (data.limits) setLimits(data.limits);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -127,7 +206,7 @@ export default function HubPage({ profile }) {
   const list = useMemo(() => {
     const raw =
       tab === "recommended"
-        ? recommended
+        ? sortRecommended(recommended)
         : tab === "liked"
           ? liked
           : tab === "applied"
@@ -284,10 +363,25 @@ export default function HubPage({ profile }) {
             </Link>
           </p>
         </div>
-        <button className="btn btn-solid" onClick={() => loadHub({ force: true })} disabled={busy}>
-          {busy ? "Finding…" : "Refresh"}
+        <button
+          className="btn btn-solid"
+          onClick={() => loadHub({ force: true })}
+          disabled={busy || refreshLocked}
+          title={
+            refreshLocked
+              ? `Free refresh cooldown: ${Math.ceil(refreshWait / 60)} min left`
+              : "Refresh listings"
+          }
+        >
+          {busy ? "Finding…" : refreshLocked ? `Wait ${Math.ceil(refreshWait / 60)}m` : "Refresh"}
         </button>
       </div>
+
+      {limits?.max_jobs != null && limits.plan === "free" ? (
+        <p className="meta" style={{ marginTop: "-0.35rem" }}>
+          Free hub: up to {limits.max_jobs} jobs · longer cache · limited refreshes
+        </p>
+      ) : null}
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -357,6 +451,12 @@ export default function HubPage({ profile }) {
                 {job.company || "Company"} · {job.location || "Location"}
               </div>
               {job.salary && <div className="meta">{typeof job.salary === "string" ? job.salary : ""}</div>}
+              {tab === "recommended" && (
+                <div className="jobs-row-foot">
+                  <MatchRing score={job.match_score} needsResume={job.match_needs_resume} />
+                  <span className="jobs-role-tag">{roleTag(job, profile)}</span>
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -373,6 +473,17 @@ export default function HubPage({ profile }) {
                 {selected.company} · {selected.location}
                 {selected.posted_at ? ` · ${selected.posted_at}` : ""}
               </div>
+              {tab === "recommended" && (
+                <div className="jobs-detail-match">
+                  <MatchRing
+                    score={selected.match_score}
+                    needsResume={selected.match_needs_resume}
+                  />
+                  {!selected.match_needs_resume && selected.match_score != null ? (
+                    <span className="meta">AI match vs your resume + prefs</span>
+                  ) : null}
+                </div>
+              )}
               {selected.salary && typeof selected.salary === "string" && (
                 <div className="meta" style={{ marginBottom: "0.8rem" }}>
                   {selected.salary}

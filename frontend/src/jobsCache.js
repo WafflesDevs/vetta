@@ -86,6 +86,21 @@ export async function loadJobs(profile, { force = false } = {}) {
   } else {
     clearJobsCache();
   }
-  const data = await prefetchJobs(profile);
-  return data;
+  const path = force ? "/api/careers/hub?force=true" : "/api/careers/hub";
+  const key = jobsCacheKey(profile);
+  if (inflight && inflight.key === key && !force) {
+    return inflight.promise;
+  }
+  const promise = api(path)
+    .then((data) => {
+      cache = { key, data, at: Date.now() };
+      if (inflight?.key === key) inflight = null;
+      return data;
+    })
+    .catch((err) => {
+      if (inflight?.key === key) inflight = null;
+      throw err;
+    });
+  inflight = { key, promise };
+  return promise;
 }

@@ -1,11 +1,12 @@
 from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from pydantic import BaseModel, EmailStr, field_validator
+from urllib.parse import urlparse
 
 from app.config import (
     MAX_CHATS,
@@ -14,6 +15,18 @@ from app.config import (
     ENV,
     IS_PROD,
     missing_required_env,
+    JOBS_MAX_ITEMS_FREE,
+    JOBS_MAX_ITEMS_EXPERT,
+    JOBS_MAX_ITEMS_PRO,
+    JOBS_CACHE_TTL_FREE_SECONDS,
+    JOBS_CACHE_TTL_PAID_SECONDS,
+    JOBS_REFRESH_COOLDOWN_FREE_SECONDS,
+    QUIZ_QUESTIONS_PER_CYCLE,
+    PASSWORD_RESET_REDIRECT_URL,
+    PUBLIC_TRY_QUESTIONS,
+    PUBLIC_TRY_QUIZ_PER_HOUR,
+    PUBLIC_TRY_RESULTS_PER_HOUR,
+    PUBLIC_TRY_RESUME_MAX_BYTES,
 )
 from app.auth import get_current_user, get_user_db, get_token
 from app.db import get_anon_client
@@ -22,10 +35,29 @@ from app.core.resume_loader import extract_resume_text
 from app.core.resume_editor import edit_resume_stream
 from app.core.resume_pdf import resume_text_to_pdf
 from app.core.quiz_service import generate_quiz
-from app.core.careers_service import fetch_career_hub_jobs
+from app.core.quiz_limits import (
+    can_start_quiz,
+    quiz_cycles_used,
+    quiz_max_cycles,
+    record_quiz_cycle,
+)
+from app.core.public_rate_limit import IpRateLimiter, client_ip
+from app.core.public_try_service import (
+    build_try_results,
+    list_public_roles,
+    pick_public_quiz,
+)
+from app.core.careers_service import (
+    enrich_jobs_with_match_scores,
+    fetch_career_hub_jobs,
+    peek_career_hub_jobs,
+    sort_jobs_by_match_score,
+)
 import json
 import os
+import time
 import traceback
+from threading import Lock
 
 
 def now_iso():
@@ -66,6 +98,20 @@ class SignupBody(AuthBody):
     display_name: str = ""
 
 
+class ForgotPasswordBody(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordBody(BaseModel):
+    password: str
+    refresh_token: str = ""
+
+
+class VerifyRecoveryBody(BaseModel):
+    token_hash: str
+    type: str = "recovery"
+
+
 class MessageBody(BaseModel):
     content: str
 
@@ -88,6 +134,71 @@ class ResumePdfBody(BaseModel):
 
 class QuizAnswerBody(BaseModel):
     selected_index: int
+
+
+def profile_plan(profile: dict | None) -> str:
+    """Current product plan. Defaults to free until billing is wired."""
+    if not profile:
+        return "free"
+    plan = (profile.get("plan") or "free").strip().lower()
+    if plan in {"careerexpert", "expert", "careerpro", "pro"}:
+        return "careerpro" if plan in {"careerpro", "pro"} else "careerexpert"
+    return "free"
+
+
+def can_use_resume_editor(profile: dict | None) -> bool:
+    return profile_plan(profile) in {"careerexpert", "careerpro"}
+
+
+def _chat_message_cap_detail(plan: str, *, at_cap: bool) -> str:
+    if at_cap:
+        base = f"This chat hit the {MAX_MESSAGES_PER_CHAT} message limit."
+    else:
+        base = (
+            f"Not enough room left in this chat "
+            f"(max {MAX_MESSAGES_PER_CHAT} messages)."
+        )
+    if plan == "free":
+        return f"{base} Upgrade for more headroom."
+    return f"{base} Delete it and start a new one."
+
+
+def jobs_max_for(plan: str) -> int:
+    if plan == "careerpro":
+        return JOBS_MAX_ITEMS_PRO
+    if plan == "careerexpert":
+        return JOBS_MAX_ITEMS_EXPERT
+    return JOBS_MAX_ITEMS_FREE
+
+
+def jobs_cache_ttl_for(plan: str) -> int:
+    if plan == "free":
+        return JOBS_CACHE_TTL_FREE_SECONDS
+    return JOBS_CACHE_TTL_PAID_SECONDS
+
+
+def jobs_refresh_cooldown_for(plan: str) -> int:
+    if plan == "free":
+        return JOBS_REFRESH_COOLDOWN_FREE_SECONDS
+    return 0
+
+
+_hub_refresh_at: dict[str, float] = {}
+_hub_refresh_lock = Lock()
+
+
+def _hub_refresh_remaining(user_id: str, cooldown: int) -> int:
+    if cooldown <= 0:
+        return 0
+    with _hub_refresh_lock:
+        last = _hub_refresh_at.get(str(user_id)) or 0.0
+    left = int(cooldown - (time.time() - last))
+    return max(0, left)
+
+
+def _mark_hub_refresh(user_id: str) -> None:
+    with _hub_refresh_lock:
+        _hub_refresh_at[str(user_id)] = time.time()
 
 
 # ---------- auth ----------
@@ -167,6 +278,113 @@ def logout(token: str = Depends(get_token)):
     except Exception:
         pass
     return {"ok": True}
+
+
+def _password_reset_redirect(request: Request) -> str:
+    """Redirect target for Supabase recovery emails (must be Vite SPA in local dev)."""
+    if PASSWORD_RESET_REDIRECT_URL:
+        return PASSWORD_RESET_REDIRECT_URL
+    origin = (request.headers.get("origin") or "").strip()
+    if not origin:
+        referer = (request.headers.get("referer") or "").strip()
+        if referer:
+            parsed = urlparse(referer)
+            if parsed.scheme and parsed.netloc:
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+    # Prefer the SPA origin; avoid sending users to the API host (:8000).
+    if origin:
+        host = urlparse(origin).hostname or ""
+        if host in {"127.0.0.1", "localhost"} and ":8000" in origin:
+            return "http://localhost:5173/reset-password"
+        return f"{origin.rstrip('/')}/reset-password"
+    return "http://localhost:5173/reset-password"
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(body: ForgotPasswordBody, request: Request):
+    """Send a Supabase password-reset email. Always returns ok (no email leak)."""
+    client = get_anon_client()
+    redirect_to = _password_reset_redirect(request)
+    try:
+        client.auth.reset_password_for_email(
+            body.email,
+            {"redirect_to": redirect_to},
+        )
+    except Exception:
+        traceback.print_exc()
+    return {
+        "ok": True,
+        "message": "Check your email for a reset link.",
+        "redirect_to": redirect_to,
+    }
+
+
+@app.post("/api/auth/verify-recovery")
+def verify_recovery(body: VerifyRecoveryBody):
+    """Exchange a recovery token_hash (query-param flow) for a session."""
+    client = get_anon_client()
+    token_hash = (body.token_hash or "").strip()
+    otp_type = (body.type or "recovery").strip() or "recovery"
+    if not token_hash:
+        raise HTTPException(
+            status_code=400,
+            detail="Reset link is missing a token. Request a new one from Forgot password.",
+        )
+    try:
+        result = client.auth.verify_otp(
+            {
+                "token_hash": token_hash,
+                "type": otp_type,
+            }
+        )
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=400,
+            detail="Reset link is invalid or expired. Request a new one from Forgot password.",
+        )
+
+    if not result.session:
+        raise HTTPException(
+            status_code=400,
+            detail="Reset link is invalid or expired. Request a new one from Forgot password.",
+        )
+
+    return {
+        "user": {"id": result.user.id, "email": result.user.email} if result.user else None,
+        "session": {
+            "access_token": result.session.access_token,
+            "refresh_token": result.session.refresh_token,
+        },
+    }
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(body: ResetPasswordBody, token: str = Depends(get_token)):
+    """Set a new password using the recovery session from the email link."""
+    if len(body.password or "") < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters.",
+        )
+    if not body.refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing recovery session. Open the link from your email again.",
+        )
+
+    client = get_anon_client()
+    try:
+        client.auth.set_session(token, body.refresh_token)
+        client.auth.update_user({"password": body.password})
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=400,
+            detail="Could not update password. Request a new reset link.",
+        )
+
+    return {"ok": True, "message": "Password updated. You can log in now."}
 
 
 @app.get("/api/me")
@@ -272,6 +490,12 @@ def save_resume_text(
     user: dict = Depends(get_current_user),
     db=Depends(get_user_db),
 ):
+    profile = db.table("profiles").select("*").eq("id", user["id"]).maybe_single().execute()
+    if not can_use_resume_editor(profile.data):
+        raise HTTPException(
+            status_code=403,
+            detail="Live resume editing is on CareerExpert and CareerPro. Upload stays free in Settings.",
+        )
     text = (body.get("resume_text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Resume text is empty.")
@@ -303,10 +527,14 @@ def stream_resume_edit(
         .execute()
     )
     p = profile.data or {}
+    if not can_use_resume_editor(p):
+        raise HTTPException(
+            status_code=403,
+            detail="Live resume editing is on CareerExpert and CareerPro.",
+        )
     current = (body.resume_text or p.get("resume_text") or "").strip()
     if not current:
         raise HTTPException(status_code=400, detail="Upload a resume first.")
-
     instruction = (body.instruction or "").strip()
     if not instruction:
         raise HTTPException(status_code=400, detail="Tell me what to change.")
@@ -400,7 +628,7 @@ def preview_resume_pdf(
     )
 
 
-# ---------- chats (max 2) + messages (max 30) ----------
+# ---------- chats (max 1 free) + messages (max 60) ----------
 
 @app.get("/api/chats")
 def list_chats(user: dict = Depends(get_current_user), db=Depends(get_user_db)):
@@ -423,10 +651,25 @@ def create_chat(user: dict = Depends(get_current_user), db=Depends(get_user_db))
         .execute()
     )
     if existing.data and len(existing.data) >= MAX_CHATS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Free tier allows only {MAX_CHATS} chats. Delete one to make a new chat.",
+        # select("*") — do not request plan explicitly; column may be absent until migrated
+        profile = (
+            db.table("profiles")
+            .select("*")
+            .eq("id", user["id"])
+            .maybe_single()
+            .execute()
         )
+        if profile_plan(profile.data) == "free":
+            detail = (
+                f"Free tier allows only {MAX_CHATS} chat"
+                f"{'' if MAX_CHATS == 1 else 's'}. Upgrade to create another."
+            )
+        else:
+            detail = (
+                f"You can have at most {MAX_CHATS} chats. "
+                "Delete one to make a new chat."
+            )
+        raise HTTPException(status_code=400, detail=detail)
 
     result = db.table("chats").insert({
         "user_id": user["id"],
@@ -437,6 +680,18 @@ def create_chat(user: dict = Depends(get_current_user), db=Depends(get_user_db))
 
 @app.delete("/api/chats/{chat_id}")
 def delete_chat(chat_id: str, user: dict = Depends(get_current_user), db=Depends(get_user_db)):
+    profile = (
+        db.table("profiles")
+        .select("*")
+        .eq("id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    if profile_plan(profile.data) == "free":
+        raise HTTPException(
+            status_code=403,
+            detail="Free tier cannot delete chats. Upgrade to manage multiple chats.",
+        )
     db.table("messages").delete().eq("chat_id", chat_id).eq("user_id", user["id"]).execute()
     db.table("chats").delete().eq("id", chat_id).eq("user_id", user["id"]).execute()
     return {"ok": True}
@@ -494,19 +749,26 @@ def send_message(
         .execute()
     )
     count = len(existing.data or [])
+    profile = (
+        db.table("profiles")
+        .select("*")
+        .eq("id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    plan = profile_plan(profile.data)
     # each user turn adds 2 messages (user + assistant)
     if count >= MAX_MESSAGES_PER_CHAT:
         raise HTTPException(
             status_code=400,
-            detail=f"This chat hit the {MAX_MESSAGES_PER_CHAT} message limit. Delete it and start a new one.",
+            detail=_chat_message_cap_detail(plan, at_cap=True),
         )
     if count + 2 > MAX_MESSAGES_PER_CHAT:
         raise HTTPException(
             status_code=400,
-            detail=f"Not enough room left in this chat (max {MAX_MESSAGES_PER_CHAT} messages). Delete it and start a new one.",
+            detail=_chat_message_cap_detail(plan, at_cap=False),
         )
 
-    profile = db.table("profiles").select("resume_text").eq("id", user["id"]).maybe_single().execute()
     resume = (profile.data or {}).get("resume_text") or None
 
     history = (
@@ -574,18 +836,25 @@ def send_message_stream(
         .execute()
     )
     count = len(existing.data or [])
+    profile = (
+        db.table("profiles")
+        .select("*")
+        .eq("id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    plan = profile_plan(profile.data)
     if count >= MAX_MESSAGES_PER_CHAT:
         raise HTTPException(
             status_code=400,
-            detail=f"This chat hit the {MAX_MESSAGES_PER_CHAT} message limit. Delete it and start a new one.",
+            detail=_chat_message_cap_detail(plan, at_cap=True),
         )
     if count + 2 > MAX_MESSAGES_PER_CHAT:
         raise HTTPException(
             status_code=400,
-            detail=f"Not enough room left in this chat (max {MAX_MESSAGES_PER_CHAT} messages). Delete it and start a new one.",
+            detail=_chat_message_cap_detail(plan, at_cap=False),
         )
 
-    profile = db.table("profiles").select("resume_text").eq("id", user["id"]).maybe_single().execute()
     resume = (profile.data or {}).get("resume_text") or None
 
     history = (
@@ -703,10 +972,39 @@ class JobSaveBody(BaseModel):
 
 
 @app.get("/api/careers/hub")
-def careers_hub(user: dict = Depends(get_current_user), db=Depends(get_user_db)):
+def careers_hub(
+    force: bool = Query(False),
+    user: dict = Depends(get_current_user),
+    db=Depends(get_user_db),
+):
     profile = db.table("profiles").select("*").eq("id", user["id"]).maybe_single().execute()
     p = profile.data or {}
-    jobs = fetch_career_hub_jobs(p.get("target_roles", ""), p.get("locations", ""))
+    plan = profile_plan(p)
+    max_jobs = jobs_max_for(plan)
+    cache_ttl = jobs_cache_ttl_for(plan)
+    cooldown = jobs_refresh_cooldown_for(plan)
+    refresh_wait = _hub_refresh_remaining(user["id"], cooldown)
+
+    want_force = bool(force)
+    if want_force and refresh_wait > 0:
+        # Free cooldown: never re-scrape — serve cache only
+        cached_only = peek_career_hub_jobs(
+            p.get("target_roles", ""),
+            p.get("locations", ""),
+            max_items=max_jobs,
+        )
+        jobs, from_cache = (cached_only or []), True
+    else:
+        jobs, from_cache = fetch_career_hub_jobs(
+            p.get("target_roles", ""),
+            p.get("locations", ""),
+            max_items=max_jobs,
+            cache_ttl_seconds=cache_ttl,
+            force=want_force,
+        )
+        if not from_cache:
+            _mark_hub_refresh(user["id"])
+            refresh_wait = cooldown
 
     saves = (
         db.table("job_saves")
@@ -717,9 +1015,21 @@ def careers_hub(user: dict = Depends(get_current_user), db=Depends(get_user_db))
     saved = saves.data or []
     by_url = {s["url"]: s for s in saved if s.get("url")}
 
-    # mark recommended jobs with current save status
+    prefs = {
+        "target_roles": p.get("target_roles", ""),
+        "locations": p.get("locations", ""),
+        "goals": p.get("goals", ""),
+    }
+    scored = enrich_jobs_with_match_scores(
+        jobs,
+        user_id=user["id"],
+        resume_text=p.get("resume_text") or "",
+        prefs=prefs,
+    )
+
+    # mark recommended jobs with current save status + AI match %
     enriched = []
-    for job in jobs:
+    for job in scored:
         url = job.get("url") or ""
         save = by_url.get(url)
         enriched.append({
@@ -727,16 +1037,15 @@ def careers_hub(user: dict = Depends(get_current_user), db=Depends(get_user_db))
             "saved_status": save["status"] if save else None,
         })
 
+    # Best matches first; null/missing scores last
+    enriched = sort_jobs_by_match_score(enriched)
+
     liked = [s for s in saved if s.get("status") == "liked"]
     applied = [s for s in saved if s.get("status") == "applied"]
     external = [s for s in saved if s.get("status") == "external"]
 
     return {
-        "preferences": {
-            "target_roles": p.get("target_roles", ""),
-            "locations": p.get("locations", ""),
-            "goals": p.get("goals", ""),
-        },
+        "preferences": prefs,
         "recommended": enriched,
         "liked": liked,
         "applied": applied,
@@ -749,6 +1058,14 @@ def careers_hub(user: dict = Depends(get_current_user), db=Depends(get_user_db))
         },
         # keep old key so nothing else breaks
         "jobs": enriched,
+        "limits": {
+            "plan": plan,
+            "max_jobs": max_jobs,
+            "cache_ttl_seconds": cache_ttl,
+            "refresh_cooldown_seconds": cooldown,
+            "refresh_wait_seconds": refresh_wait,
+            "from_cache": from_cache,
+        },
     }
 
 
@@ -852,6 +1169,126 @@ def unsave_job(url: str, user: dict = Depends(get_current_user), db=Depends(get_
     return {"ok": True}
 
 
+# ---------- public try funnel (anonymous, low-cost) ----------
+
+_public_quiz_limiter = IpRateLimiter(PUBLIC_TRY_QUIZ_PER_HOUR, 3600)
+_public_results_limiter = IpRateLimiter(PUBLIC_TRY_RESULTS_PER_HOUR, 3600)
+
+
+class PublicTryQuizBody(BaseModel):
+    role: str = "general"
+
+
+def _enforce_public_limit(limiter: IpRateLimiter, request: Request) -> None:
+    ok, detail = limiter.check(client_ip(request))
+    if not ok:
+        raise HTTPException(status_code=429, detail=detail)
+
+
+@app.get("/api/public/try/roles")
+def public_try_roles():
+    return {"roles": list_public_roles()}
+
+
+@app.post("/api/public/try/quiz")
+def public_try_quiz(request: Request, body: PublicTryQuizBody | None = None):
+    _enforce_public_limit(_public_quiz_limiter, request)
+    role = ((body.role if body else None) or "general").strip() or "general"
+    questions, matched = pick_public_quiz(role=role, count=PUBLIC_TRY_QUESTIONS)
+    if not questions:
+        raise HTTPException(status_code=503, detail="Quiz bank unavailable. Try again later.")
+    playable = []
+    for i, q in enumerate(questions):
+        playable.append({
+            "id": i,
+            "question": q["question"],
+            "options": q["options"],
+            "correct_index": q["correct_index"],
+            "explanation": q["explanation"],
+        })
+    return {
+        "questions": playable,
+        "role": matched,
+        "source": "local_bank",
+        "count": len(playable),
+    }
+
+
+@app.post("/api/public/try/results")
+async def public_try_results(request: Request):
+    """
+    JSON or multipart. Heuristic resume check only — no LLM.
+    Fields: role, quiz_correct, quiz_total, resume_text; optional file field `resume`.
+    """
+    _enforce_public_limit(_public_results_limiter, request)
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    role_val = "general"
+    correct = 0
+    total = 1
+    text = ""
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        role_val = str(form.get("role") or "general").strip() or "general"
+        try:
+            correct = int(form.get("quiz_correct") or 0)
+        except (TypeError, ValueError):
+            correct = 0
+        try:
+            total = int(form.get("quiz_total") or 1)
+        except (TypeError, ValueError):
+            total = 1
+        text = str(form.get("resume_text") or "").strip()
+        upload = form.get("resume")
+        if upload is not None and hasattr(upload, "read"):
+            data = await upload.read()
+            filename = getattr(upload, "filename", "") or ""
+            if data and filename:
+                if len(data) > PUBLIC_TRY_RESUME_MAX_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Resume too large (max {PUBLIC_TRY_RESUME_MAX_BYTES // 1000}KB).",
+                    )
+                try:
+                    extracted = extract_resume_text(filename, data)
+                    if extracted:
+                        text = extracted
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                except Exception:
+                    raise HTTPException(
+                        status_code=400, detail="Could not read that resume file."
+                    ) from None
+    else:
+        try:
+            raw = await request.json()
+        except Exception:
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+        role_val = str(raw.get("role") or "general").strip() or "general"
+        try:
+            correct = int(raw.get("quiz_correct", 0))
+        except (TypeError, ValueError):
+            correct = 0
+        try:
+            total = int(raw.get("quiz_total", 1))
+        except (TypeError, ValueError):
+            total = 1
+        text = str(raw.get("resume_text") or "").strip()
+
+    if len(text) > 40_000:
+        text = text[:40_000]
+
+    return build_try_results(
+        role=role_val,
+        quiz_correct=correct,
+        quiz_total=total,
+        resume_text=text,
+    )
+
+
 # ---------- quiz ----------
 
 class QuizStartBody(BaseModel):
@@ -866,13 +1303,19 @@ def quiz_start(
 ):
     profile = db.table("profiles").select("*").eq("id", user["id"]).maybe_single().execute()
     p = profile.data or {}
+    plan = profile_plan(p)
     avoid = (body.avoid_questions if body else None) or []
+    is_new_round = bool(avoid)
+    ok, detail = can_start_quiz(plan, user["id"], is_new_round=is_new_round)
+    if not ok:
+        raise HTTPException(status_code=403, detail=detail)
+
     questions = generate_quiz(
         target_roles=p.get("target_roles", ""),
         locations=p.get("locations", ""),
         goals=p.get("goals", ""),
         resume_text=p.get("resume_text", ""),
-        count=5,
+        count=QUIZ_QUESTIONS_PER_CYCLE,
         avoid_questions=avoid,
     )
     if not questions:
@@ -882,7 +1325,7 @@ def quiz_start(
             locations=p.get("locations", ""),
             goals=p.get("goals", ""),
             resume_text=p.get("resume_text", ""),
-            count=5,
+            count=QUIZ_QUESTIONS_PER_CYCLE,
             avoid_questions=avoid,
         )
     playable = []
@@ -894,37 +1337,106 @@ def quiz_start(
             "correct_index": q["correct_index"],
             "explanation": q["explanation"],
         })
-    return {"questions": playable}
+    used = record_quiz_cycle(user["id"]) if playable else quiz_cycles_used(user["id"])
+    max_cycles = quiz_max_cycles(plan)
+    remaining = None if max_cycles is None else max(0, max_cycles - used)
+    return {
+        "questions": playable,
+        "source": "role_bank_or_model",
+        "limits": {
+            "plan": plan,
+            "cycles_used": used,
+            "max_cycles": max_cycles,
+            "cycles_remaining": remaining,
+        },
+    }
 
 
-# ---------- plans (TBA) ----------
+# ---------- plans ----------
+
+PLANS = [
+    {
+        "id": "free",
+        "name": "Free",
+        "price": "$0",
+        "price_period": "",
+        "badge": "Try the loop",
+        "blurb": "Learn Find → Score → Tailor → Practice. Cap-friendly by design.",
+        "features": [
+            "1 chat · 60 messages",
+            "Job hub: ~5 jobs",
+            "1 interview quiz cycle",
+            "Resume upload for chat + matching",
+        ],
+        "restrictions": [
+            "Cannot delete the chat",
+            "No live PDF resume editor",
+            "Job refreshes cooldown ~1 hour (scrapes less)",
+            "No extra quiz rounds",
+            "Fit scores / rewrites capped via chat limits",
+        ],
+        "cta": "You're on Free",
+        "cta_disabled": True,
+        "featured": False,
+    },
+    {
+        "id": "careerexpert",
+        "name": "CareerExpert",
+        "price": "$19",
+        "price_period": "/mo",
+        "badge": "Best value",
+        "blurb": "Polish materials without burning Free’s chat budget.",
+        "features": [
+            "More chats / higher message limit",
+            "Job hub: up to 120 listings + faster refreshes",
+            "Unlimited interview quiz rounds",
+            "Unlimited fit scores",
+            "Unlimited resume rewrites + cover letters",
+            "Live multi-page PDF resume editor",
+        ],
+        "restrictions": [],
+        "cta": "Coming soon",
+        "cta_disabled": True,
+        "featured": True,
+    },
+    {
+        "id": "careerpro",
+        "name": "CareerPro",
+        "price": "$39",
+        "price_period": "/mo",
+        "badge": "For active searches",
+        "blurb": (
+            "When Free feels cramped and Expert still isn’t enough headroom — "
+            "Pro is the full coaching loop."
+        ),
+        "features": [
+            "Everything in Expert (incl. live PDF editor)",
+            "Job hub: up to 200 listings",
+            "Highest limits across chat, jobs, and quiz",
+            "Unlimited coaching loop — score, rewrite, practice without rationing",
+            "Priority job matching to your prefs",
+            "Early access to new tools as they ship",
+        ],
+        "restrictions": [],
+        "cta": "Coming soon — join for Pro",
+        "cta_disabled": True,
+        "featured": False,
+    },
+]
+
 
 @app.get("/api/plans")
 def plans():
     return {
-        "plans": [
-            {
-                "id": "careerfinder",
-                "name": "CareerFinder",
-                "price": "TBA",
-                "blurb": "Discover roles that match where you are now.",
-                "features": ["TBA", "TBA", "TBA"],
-            },
-            {
-                "id": "careerexpert",
-                "name": "CareerExpert",
-                "price": "TBA",
-                "blurb": "Deeper resume coaching and fit scoring.",
-                "features": ["TBA", "TBA", "TBA"],
-            },
-            {
-                "id": "careerpro",
-                "name": "CareerPro",
-                "price": "TBA",
-                "blurb": "Full job-search stack for serious applicants.",
-                "features": ["TBA", "TBA", "TBA"],
-            },
-        ]
+        "tagline": (
+            "Free proves the loop. Expert unlocks the studio. "
+            "Pro runs an active search without hitting the wall."
+        ),
+        "note": (
+            "Checkout is not live yet — paid upgrades open soon. "
+            "Limits below already match what Free enforces today."
+        ),
+        "plans": PLANS,
     }
 
 

@@ -78,7 +78,7 @@ const LINKS = [
   { to: "/app/quiz", label: "Interview Quiz", icon: ICONS.quiz },
   { to: "/app/resume", label: "Resume", icon: ICONS.resume },
   { to: "/app/settings", label: "Settings", icon: ICONS.settings },
-  { to: "/pricing", label: "Plans", icon: ICONS.plans },
+  { to: "/app/plans", label: "Plans", icon: ICONS.plans },
 ];
 
 export default function DashboardLayout({ user, profile, onLogout, onProfile }) {
@@ -137,8 +137,9 @@ export default function DashboardLayout({ user, profile, onLogout, onProfile }) 
           <span />
           <span />
         </button>
-        <Link to="/" className="brand brand-icon" aria-label="Vetta home">
+        <Link to="/" className="brand" aria-label="Vetta home">
           <Logo size={26} />
+          <span className="brand-name">Vetta</span>
         </Link>
         <Link to="/pricing" className="plan-chip" title="Current plan">
           Free
@@ -155,8 +156,9 @@ export default function DashboardLayout({ user, profile, onLogout, onProfile }) 
       ) : null}
 
       <aside className="dash-side">
-        <Link to="/" className="brand brand-icon dash-side-logo" aria-label="Vetta home">
+        <Link to="/" className="brand dash-side-logo" aria-label="Vetta home">
           <Logo size={28} />
+          <span className="brand-name">Vetta</span>
         </Link>
         <nav className="dash-nav">
           {LINKS.map((item) => (

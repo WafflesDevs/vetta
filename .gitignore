@@ -7,6 +7,9 @@
 credentials.json
 **/secrets/**
 
+# Local runtime data (free-tier counters)
+.data/
+
 # Python
 .venv/
 venv/

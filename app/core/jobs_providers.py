@@ -70,53 +70,68 @@ def search_adzuna(
         return []
 
     cc = _normalize_country(country)
-    # Adzuna uses page size up to ~50; page index starts at 1
+    # Adzuna page size ~50; page index starts at 1 — paginate until max_items
+    page_size = min(50, max(1, int(max_items)))
     where = "" if (location or "").lower() in ("remote", "anywhere", "") else location
-    params = {
+    base_params = {
         "app_id": app_id,
         "app_key": app_key,
-        "results_per_page": max_items,
+        "results_per_page": page_size,
         "what": position,
         "content-type": "application/json",
     }
     if where:
-        params["where"] = where
-
-    url = f"https://api.adzuna.com/v1/api/jobs/{cc}/search/1"
-    with httpx.Client(timeout=25.0) as client:
-        res = client.get(url, params=params)
-        if res.status_code >= 400:
-            return []
-        data = res.json()
+        base_params["where"] = where
 
     jobs: list[dict[str, str]] = []
-    for item in data.get("results") or []:
-        if len(jobs) >= max_items:
-            break
-        loc = item.get("location") or {}
-        company = item.get("company") or {}
-        salary_bits = []
-        if item.get("salary_min"):
-            salary_bits.append(str(item["salary_min"]))
-        if item.get("salary_max"):
-            salary_bits.append(str(item["salary_max"]))
-        salary = " - ".join(salary_bits)
-        contract = " / ".join(
-            x for x in [item.get("contract_type"), item.get("contract_time")] if x
-        )
-        jobs.append(
-            _job(
-                title=item.get("title") or "",
-                company=company.get("display_name") or "",
-                location=loc.get("display_name") or location,
-                url=item.get("redirect_url") or "",
-                description=item.get("description") or "",
-                salary=salary,
-                job_type=contract,
-                posted_at=item.get("created") or "",
-                source="adzuna",
-            )
-        )
+    seen: set[str] = set()
+    max_pages = max(1, (max_items + page_size - 1) // page_size)
+    with httpx.Client(timeout=25.0) as client:
+        for page in range(1, max_pages + 1):
+            if len(jobs) >= max_items:
+                break
+            url = f"https://api.adzuna.com/v1/api/jobs/{cc}/search/{page}"
+            res = client.get(url, params=base_params)
+            if res.status_code >= 400:
+                break
+            data = res.json()
+            results = data.get("results") or []
+            if not results:
+                break
+            for item in results:
+                if len(jobs) >= max_items:
+                    break
+                loc = item.get("location") or {}
+                company = item.get("company") or {}
+                salary_bits = []
+                if item.get("salary_min"):
+                    salary_bits.append(str(item["salary_min"]))
+                if item.get("salary_max"):
+                    salary_bits.append(str(item["salary_max"]))
+                salary = " - ".join(salary_bits)
+                contract = " / ".join(
+                    x
+                    for x in [item.get("contract_type"), item.get("contract_time")]
+                    if x
+                )
+                job = _job(
+                    title=item.get("title") or "",
+                    company=company.get("display_name") or "",
+                    location=loc.get("display_name") or location,
+                    url=item.get("redirect_url") or "",
+                    description=item.get("description") or "",
+                    salary=salary,
+                    job_type=contract,
+                    posted_at=item.get("created") or "",
+                    source="adzuna",
+                )
+                key = job["url"]
+                if key in seen:
+                    continue
+                seen.add(key)
+                jobs.append(job)
+            if len(results) < page_size:
+                break
     return jobs
 
 
@@ -138,10 +153,12 @@ def search_jsearch(
         "X-RapidAPI-Key": key,
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
     }
+    # JSearch ~10 results per page; request enough pages for max_items (cap 20)
+    num_pages = max(1, min(20, (max(1, int(max_items)) + 9) // 10))
     params = {
         "query": query,
         "page": "1",
-        "num_pages": "1",
+        "num_pages": str(num_pages),
         "country": _normalize_country(country),
     }
     with httpx.Client(timeout=30.0) as client:
@@ -315,24 +332,32 @@ def fetch_jobs(
     apify_client: Any = None,
 ) -> tuple[list[dict[str, str]], str]:
     """
-    Try providers in order. Returns (jobs, provider_name).
+    Try providers in order; accumulate across providers if one falls short.
+    Returns (jobs, provider_name).
     """
-    max_items = max(1, min(int(max_items), 50))
+    # Hub plans request up to Pro (200); keep a hard ceiling for safety
+    max_items = max(1, min(int(max_items), 250))
     position = (position or "").strip() or "software engineer"
     location = (location or "Remote").strip() or "Remote"
     country = country or "US"
 
     providers = [
-        ("adzuna", lambda: search_adzuna(position, location, country, max_items)),
-        ("jsearch", lambda: search_jsearch(position, location, country, max_items)),
+        (
+            "adzuna",
+            lambda n: search_adzuna(position, location, country, n),
+        ),
+        (
+            "jsearch",
+            lambda n: search_jsearch(position, location, country, n),
+        ),
         (
             "tavily",
-            lambda: search_tavily_jobs(position, location, max_items, tavily_client),
+            lambda n: search_tavily_jobs(position, location, n, tavily_client),
         ),
         (
             "apify",
-            lambda: search_apify_indeed(
-                position, location, country, max_items, apify_client
+            lambda n: search_apify_indeed(
+                position, location, country, n, apify_client
             ),
         ),
     ]
@@ -344,14 +369,36 @@ def fetch_jobs(
             p for p in providers if p[0] != preferred
         ]
 
+    combined: list[dict[str, str]] = []
+    seen: set[str] = set()
+    used: list[str] = []
     last_err = ""
     for name, fn in providers:
+        need = max_items - len(combined)
+        if need <= 0:
+            break
         try:
-            jobs = fn()
-            if jobs:
-                return jobs[:max_items], name
+            batch = fn(need)
         except Exception as e:
             last_err = f"{name}: {e}"
             continue
+        if not batch:
+            continue
+        added = 0
+        for job in batch:
+            key = (job.get("url") or "").strip() or (
+                f"{job.get('title')}|{job.get('company')}|{job.get('location')}"
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            combined.append(job)
+            added += 1
+            if len(combined) >= max_items:
+                break
+        if added:
+            used.append(name)
 
+    if combined:
+        return combined[:max_items], "+".join(used)
     return [], last_err or "none"

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langsmith import traceable
 
 import app.config as config
@@ -78,11 +78,12 @@ def edit_resume_stream(
 
     yield {"type": "status", "text": "Reading your resume..."}
 
-    model = ChatOpenAI(
-        model=config.AGENT_MODEL,
+    model = ChatAnthropic(
+        model=config.RESUME_EDIT_MODEL,
         temperature=0.35,
         streaming=True,
         max_tokens=2200,
+        api_key=config.ANTHROPIC_API_KEY or None,
     )
 
     user_prompt = f"""Current resume:

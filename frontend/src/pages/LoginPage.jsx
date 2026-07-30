@@ -39,14 +39,14 @@ export default function LoginPage({ onAuth }) {
  <Logo size={32} />
  </Link>
  <div className="quote">
- <p>Sharpen the application. Own the interview.</p>
- <span>Sign in to your dashboard</span>
+ <p>Find. Score. Tailor. Practice.</p>
+ <span>Sign in to your career system</span>
  </div>
  </aside>
  <div className="auth-form-wrap">
  <form className="auth-form" onSubmit={submit}>
  <h1>Log in</h1>
- <p className="sub">Welcome back to your career cockpit.</p>
+ <p className="sub">Welcome back to Vetta.</p>
  {error && <div className="alert alert-error">{error}</div>}
  <div className="field">
  <label>Email</label>
@@ -57,21 +57,26 @@ export default function LoginPage({ onAuth }) {
  onChange={(e) => setEmail(e.target.value)}
  />
  </div>
- <div className="field">
- <label>Password</label>
- <input
- type="password"
- required
- value={password}
- onChange={(e) => setPassword(e.target.value)}
- />
- </div>
- <button className="btn btn-solid btn-wide" disabled={busy}>
- {busy ? "Signing in…" : "Log in"}
- </button>
- <p className="switch">
- No account? <Link to="/signup">Sign up</Link>
- </p>
+      <div className="field">
+        <div className="field-label-row">
+          <label>Password</label>
+          <Link to="/forgot-password" className="forgot-link">
+            Forgot password?
+          </Link>
+        </div>
+        <input
+          type="password"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+      <button className="btn btn-solid btn-wide" disabled={busy}>
+        {busy ? "Signing in…" : "Log in"}
+      </button>
+      <p className="switch">
+        No account? <Link to="/signup">Sign up</Link>
+      </p>
  </form>
  </div>
  </div>

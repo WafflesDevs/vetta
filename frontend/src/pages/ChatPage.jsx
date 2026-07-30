@@ -1,12 +1,122 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { api, getToken } from "../api";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  api,
+  formatApiError,
+  getToken,
+  readResponseJson,
+  redirectToLoginOnUnauthorized,
+} from "../api";
 import Logo from "../Logo";
-import MadeBy from "../components/MadeBy";
 
 const STATUS_CYCLE = ["Thinking...", "Querying...", "Generating..."];
 
-export default function ChatPage() {
+const FEATURE_GO = {
+  "/app/resume": "Go to Resume →",
+  "/app/hub": "Go to Jobs →",
+  "/app/quiz": "Go to Quiz →",
+};
+
+function goMarkerRe() {
+  return /\[\[go:(\/app\/(?:resume|hub|quiz))\|([^\]]+)\]\]/gi;
+}
+function mdGoLinkRe() {
+  return /\[([^\]]+)\]\((\/app\/(?:resume|hub|quiz))\)/gi;
+}
+function barePathRe() {
+  return /\/app\/(?:resume|hub|quiz)/gi;
+}
+
+function goButtonLabel(path) {
+  return FEATURE_GO[path] || `Go to ${path} →`;
+}
+
+function extractRedirects(text, extras = []) {
+  const found = new Map();
+  for (const item of extras || []) {
+    const path = String(item?.path || "").toLowerCase();
+    if (FEATURE_GO[path]) found.set(path, { path, label: goButtonLabel(path) });
+  }
+  const raw = String(text || "");
+  for (const match of raw.matchAll(goMarkerRe())) {
+    const path = match[1].toLowerCase();
+    if (FEATURE_GO[path]) found.set(path, { path, label: goButtonLabel(path) });
+  }
+  for (const match of raw.matchAll(mdGoLinkRe())) {
+    const path = match[2].toLowerCase();
+    if (FEATURE_GO[path]) found.set(path, { path, label: goButtonLabel(path) });
+  }
+  for (const match of raw.matchAll(barePathRe())) {
+    const path = match[0].toLowerCase();
+    if (FEATURE_GO[path]) found.set(path, { path, label: goButtonLabel(path) });
+  }
+  return [...found.values()];
+}
+
+function displayAssistantText(text) {
+  return String(text || "")
+    .replace(goMarkerRe(), "")
+    .replace(mdGoLinkRe(), "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function CoachRedirects({ redirects }) {
+  if (!redirects?.length) return null;
+  return (
+    <div className="coach-redirects" role="group" aria-label="Open feature">
+      {redirects.map((r) => (
+        <Link key={r.path} to={r.path} className="coach-go-btn">
+          {r.label || goButtonLabel(r.path)}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+const SUGGESTIONS = [
+  {
+    label: "Help with a career choice",
+    prompt: "Help me think through a career choice I'm stuck on.",
+  },
+  {
+    label: "Draft a cover letter",
+    prompt: "Help me draft a cover letter for a role I'm applying to.",
+  },
+  {
+    label: "Tips to stand out",
+    prompt: "Give me concrete tips to stand out in applications and interviews.",
+  },
+];
+
+function SparkleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 3.2l1.35 5.1L18.5 9.7l-5.15 1.4L12 16.3l-1.35-5.2L5.5 9.7l5.15-1.4L12 3.2z"
+        fill="currentColor"
+        opacity="0.95"
+      />
+      <path d="M18.2 3.8l.55 2.05 2.05.55-2.05.55-.55 2.05-.55-2.05-2.05-.55 2.05-.55.55-2.05z" fill="currentColor" />
+      <path d="M6.4 15.2l.4 1.5 1.5.4-1.5.4-.4 1.5-.4-1.5-1.5-.4 1.5-.4.4-1.5z" fill="currentColor" opacity="0.75" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4.2 11.2L19.5 4.4c.7-.3 1.4.4 1.1 1.1l-6.8 15.3c-.3.7-1.3.6-1.5-.1l-1.8-6.2-6.2-1.8c-.7-.2-.8-1.2-.1-1.5z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export default function ChatPage({ profile }) {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const [chats, setChats] = useState([]);
@@ -16,19 +126,28 @@ export default function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [statusText, setStatusText] = useState("Thinking...");
   const [streamText, setStreamText] = useState("");
-  const maxMessages = 30;
+  const [streamRedirects, setStreamRedirects] = useState([]);
+  const [maxChats, setMaxChats] = useState(1);
+  const [maxMessages, setMaxMessages] = useState(60);
   const bottomRef = useRef(null);
   const statusIdx = useRef(0);
+  const inputRef = useRef(null);
+
+  const plan = String(profile?.plan || "free").toLowerCase();
+  const isFree = !["careerexpert", "expert", "careerpro", "pro"].includes(plan);
+  const canDeleteChats = !isFree;
 
   async function loadChats() {
     const data = await api("/api/chats");
     setChats(data.chats || []);
+    if (data.max_chats != null) setMaxChats(data.max_chats);
     return data.chats || [];
   }
 
   async function loadMessages(id) {
     const data = await api(`/api/chats/${id}/messages`);
     setMessages(data.messages || []);
+    if (data.max_messages != null) setMaxMessages(data.max_messages);
   }
 
   useEffect(() => {
@@ -47,7 +166,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy, streamText, statusText]);
+  }, [messages, busy, streamText, streamRedirects, statusText]);
 
   useEffect(() => {
     if (!busy || streamText) return;
@@ -60,8 +179,18 @@ export default function ChatPage() {
     return () => clearInterval(id);
   }, [busy, streamText]);
 
+  const atChatCap = chats.length >= maxChats;
+  const atMessageCap = messages.length >= maxMessages;
+  const chatCapHint = canDeleteChats
+    ? `You can have at most ${maxChats} chat${maxChats === 1 ? "" : "s"}. Delete one to start a new chat.`
+    : `Free tier allows only ${maxChats} chat${maxChats === 1 ? "" : "s"}. Upgrade to create another.`;
+
   async function createChat() {
     setError("");
+    if (atChatCap) {
+      setError(chatCapHint);
+      return;
+    }
     try {
       const data = await api("/api/chats", { method: "POST" });
       await loadChats();
@@ -72,6 +201,10 @@ export default function ChatPage() {
   }
 
   async function removeChat(id) {
+    if (!canDeleteChats) {
+      setError("Free tier cannot delete chats. Upgrade to manage multiple chats.");
+      return;
+    }
     setError("");
     try {
       await api(`/api/chats/${id}`, { method: "DELETE" });
@@ -88,18 +221,18 @@ export default function ChatPage() {
     }
   }
 
-  async function send(e) {
-    e.preventDefault();
-    if (!chatId || !text.trim() || busy) return;
+  async function sendMessage(content) {
+    if (!chatId || !content.trim() || busy || atMessageCap) return;
     setBusy(true);
     setError("");
     setStreamText("");
+    setStreamRedirects([]);
     setStatusText("Thinking...");
-    const content = text.trim();
+    const payload = content.trim();
     setText("");
     setMessages((prev) => [
       ...prev,
-      { id: `temp-${Date.now()}`, role: "user", content },
+      { id: `temp-${Date.now()}`, role: "user", content: payload },
     ]);
 
     try {
@@ -109,24 +242,22 @@ export default function ChatPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${getToken()}`,
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: payload }),
       });
 
       if (!res.ok) {
-        let detail = "Request failed";
-        try {
-          const data = await res.json();
-          detail = data.detail || detail;
-        } catch {
-          /* ignore */
+        if (res.status === 401) {
+          redirectToLoginOnUnauthorized();
         }
-        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+        const data = await readResponseJson(res);
+        throw new Error(formatApiError(res, data));
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let assembled = "";
+      let liveRedirects = [];
       let gotFinal = false;
 
       while (true) {
@@ -150,15 +281,31 @@ export default function ChatPage() {
           } else if (event.type === "token" && event.text) {
             assembled += event.text;
             setStreamText(assembled);
-          } else           if (event.type === "final" && event.messages) {
+            setStreamRedirects(extractRedirects(assembled, liveRedirects));
+          } else if (event.type === "redirect" && event.path) {
+            liveRedirects = extractRedirects(assembled, [
+              ...liveRedirects,
+              { path: event.path, label: event.label },
+            ]);
+            setStreamRedirects(liveRedirects);
+          } else if (event.type === "final" && event.messages) {
             setMessages(event.messages);
             setStreamText("");
+            setStreamRedirects([]);
             gotFinal = true;
           } else if (event.type === "error") {
             throw new Error(event.detail || "Stream failed");
-          } else if (event.type === "done" && event.content && !assembled) {
-            assembled = event.content;
-            setStreamText(assembled);
+          } else if (event.type === "done") {
+            if (event.content && !assembled) {
+              assembled = event.content;
+              setStreamText(assembled);
+            }
+            if (Array.isArray(event.redirects) && event.redirects.length) {
+              liveRedirects = extractRedirects(assembled, event.redirects);
+              setStreamRedirects(liveRedirects);
+            } else {
+              setStreamRedirects(extractRedirects(assembled, liveRedirects));
+            }
           }
         }
       }
@@ -166,33 +313,63 @@ export default function ChatPage() {
       if (!gotFinal) {
         await loadMessages(chatId);
         setStreamText("");
+        setStreamRedirects([]);
       }
       await loadChats();
     } catch (err) {
       setError(err.message);
-      setText(content);
+      setText(payload);
       setStreamText("");
+      setStreamRedirects([]);
       await loadMessages(chatId).catch(() => {});
     } finally {
       setBusy(false);
     }
   }
 
+  function send(e) {
+    e.preventDefault();
+    sendMessage(text);
+  }
+
+  function useSuggestion(prompt) {
+    if (!chatId) {
+      setError(atChatCap ? chatCapHint : "Create a chat to start coaching.");
+      return;
+    }
+    if (atMessageCap || busy) return;
+    sendMessage(prompt);
+  }
+
   const showEmpty = chatId && messages.length === 0 && !busy && !streamText;
   const showPickChat = !chatId;
+  const showChips = (showEmpty || showPickChat) && !busy;
 
   return (
-    <div className="gemini-chat">
-      <aside className="gemini-rail panel">
-        <div className="gemini-rail-head">
+    <div className="coach-chat">
+      <aside className="coach-rail panel">
+        <div className="coach-rail-head">
           <strong>Chats</strong>
-          <button className="btn btn-solid" style={{ padding: "0.45rem 0.8rem" }} onClick={createChat}>
+          <button
+            className="btn btn-solid"
+            style={{ padding: "0.45rem 0.8rem" }}
+            onClick={createChat}
+            disabled={atChatCap}
+            title={atChatCap ? chatCapHint : "New chat"}
+          >
             +
           </button>
         </div>
         <p className="meta" style={{ margin: "0 0 0.7rem" }}>
-          {chats.length}/2 · {messages.length}/{maxMessages} msgs
+          {chats.length}/{maxChats} · {messages.length}/{maxMessages} msgs
         </p>
+        {atChatCap && (
+          <p className="meta" style={{ margin: "0 0 0.7rem" }}>
+            {canDeleteChats
+              ? "Chat limit reached. Delete a chat to start a new one."
+              : "Chat limit reached. Upgrade to create another."}
+          </p>
+        )}
         {chats.map((c) => (
           <div className="chat-row" key={c.id}>
             <button
@@ -201,96 +378,152 @@ export default function ChatPage() {
             >
               {c.title}
             </button>
-            <button className="x" onClick={() => removeChat(c.id)}>
-              ✕
-            </button>
+            {canDeleteChats && (
+              <button className="x" onClick={() => removeChat(c.id)}>
+                ✕
+              </button>
+            )}
           </div>
         ))}
         {chats.length === 0 && <div className="meta">No chats yet. Hit +</div>}
       </aside>
 
-      <section className="gemini-main">
+      <section className="coach-main">
+        <header className="coach-header">
+          <div className="coach-brand">
+            <Logo size={36} />
+            <div>
+              <p className="coach-eyebrow">Vetta</p>
+              <h1>Your coach</h1>
+            </div>
+          </div>
+          <p className="coach-limits meta">
+            {chats.length}/{maxChats} chats · {messages.length}/{maxMessages} msgs
+            {isFree ? " · Free" : ""}
+          </p>
+        </header>
+
         {error && <div className="alert alert-error">{error}</div>}
 
-        <div className="gemini-thread">
-          <div className="gemini-glow" aria-hidden />
+        <div className="coach-thread">
+          <div className="coach-glow" aria-hidden />
 
           {showPickChat && (
-            <div className="gemini-empty">
-              <Logo size={48} />
+            <div className="coach-empty">
+              <Logo size={44} />
               <h2>Ready when you are</h2>
-              <p className="meta">Create a chat to start coaching with Vetta.</p>
-              <button className="btn btn-solid" onClick={createChat}>
-                New chat
-              </button>
+              <p className="meta">
+                {atChatCap
+                  ? chatCapHint
+                  : "Career advice and cover letters — create a chat to begin."}
+              </p>
+              {!atChatCap && (
+                <button className="btn btn-solid" onClick={createChat}>
+                  New chat
+                </button>
+              )}
             </div>
           )}
 
           {showEmpty && (
-            <div className="gemini-empty">
-              <Logo size={48} />
-              <h2>Ready when you are</h2>
-              <p className="meta">Ask about jobs, fit scores, resume rewrites, or cover letters.</p>
+            <div className="coach-empty coach-empty-soft">
+              <p className="coach-hello">Hey — I’m your Vetta coach.</p>
+              <p className="meta">
+                Career advice and cover letters. Job search → Hub · Resume edits → Resume · Interview practice → Quiz.
+              </p>
             </div>
           )}
 
-          <div className="gemini-messages">
+          <div className="coach-messages">
             {messages.map((m) =>
               m.role === "user" ? (
-                <div key={m.id} className="g-bubble user">
+                <div key={m.id} className="coach-bubble user">
                   {m.content}
                 </div>
               ) : (
-                <div key={m.id} className="g-bubble assistant">
-                  <div className="g-assistant-label" aria-label="Vetta">
-                    <Logo size={16} />
-                  </div>
-                  <div className="g-assistant-body">{m.content}</div>
+                <div key={m.id} className="coach-bubble assistant">
+                  <div className="coach-bubble-text">{displayAssistantText(m.content)}</div>
+                  <CoachRedirects redirects={extractRedirects(m.content)} />
                 </div>
               )
             )}
             {busy && (
-              <div className="g-bubble assistant">
-                <div className="g-assistant-label" aria-label="Vetta">
-                  <Logo size={16} />
-                </div>
-                <div className="g-assistant-body">
-                  {streamText ? (
-                    <>
-                      {streamText}
+              <div className="coach-bubble assistant">
+                {streamText ? (
+                  <>
+                    <div className="coach-bubble-text">
+                      {displayAssistantText(streamText)}
                       <span className="stream-cursor" aria-hidden />
-                    </>
-                  ) : (
-                    <span className="meta status-pulse">{statusText}</span>
-                  )}
-                </div>
+                    </div>
+                    <CoachRedirects
+                      redirects={extractRedirects(streamText, streamRedirects)}
+                    />
+                  </>
+                ) : (
+                  <span className="meta status-pulse">{statusText}</span>
+                )}
+              </div>
+            )}
+
+            {showChips && chatId && (
+              <div className="coach-chips" role="list">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    className="coach-chip"
+                    role="listitem"
+                    disabled={busy || atMessageCap}
+                    onClick={() => useSuggestion(s.prompt)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
             )}
             <div ref={bottomRef} />
           </div>
         </div>
 
-        <form className="gemini-composer" onSubmit={send}>
-          <button type="button" className="g-plus" onClick={createChat} title="New chat">
-            +
+        <form className="coach-composer" onSubmit={send}>
+          <button
+            type="button"
+            className="coach-spark"
+            onClick={() => {
+              if (showChips && chatId) useSuggestion(SUGGESTIONS[0].prompt);
+              else inputRef.current?.focus();
+            }}
+            disabled={!chatId || busy || atMessageCap}
+            title="Suggest a prompt"
+            aria-label="Suggest a prompt"
+          >
+            <SparkleIcon />
           </button>
           <input
+            ref={inputRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={busy ? statusText : "Ask Vetta"}
-            disabled={!chatId || busy}
+            placeholder={
+              atMessageCap
+                ? `Message limit reached (${maxMessages})`
+                : busy
+                  ? statusText
+                  : "Message Career Coach"
+            }
+            disabled={!chatId || busy || atMessageCap}
           />
           <button
             type="submit"
-            className="g-send"
-            disabled={!chatId || busy || !text.trim()}
+            className="coach-send"
+            disabled={!chatId || busy || !text.trim() || atMessageCap}
             aria-label="Send"
           >
-            ↑
+            <SendIcon />
           </button>
         </form>
-        <p className="gemini-foot meta">Vetta can make mistakes. Double check important career advice.</p>
-        <MadeBy className="made-by-chat" />
+        <p className="coach-foot meta">
+          Advice only — no job search or resume rewrite here. Vetta can make mistakes; double-check important guidance.
+        </p>
       </section>
     </div>
   );

@@ -49,14 +49,14 @@ export default function SignupPage({ onAuth }) {
  <Logo size={32} />
  </Link>
  <div className="quote">
- <p>Jumpstart your career.</p>
+ <p>Your career loop starts here.</p>
  <span>Create your Vetta account</span>
  </div>
  </aside>
  <div className="auth-form-wrap">
  <form className="auth-form" onSubmit={submit}>
  <h1>Sign up</h1>
- <p className="sub">Start free, no credit card.</p>
+ <p className="sub">Start free — find, score, tailor, practice.</p>
  {error && <div className="alert alert-error">{error}</div>}
  <div className="field">
  <label>Display name</label>

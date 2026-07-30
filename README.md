@@ -22,7 +22,7 @@ Career coach app I built for job search: chat with an AI coach, browse live role
 
 ## Stack
 
-- FastAPI + LangChain / LangGraph (`gpt-4o-mini`)
+- FastAPI + LangChain / LangGraph (`claude-sonnet-4-5`)
 - React (Vite) UI, served from the same Render service in production
 - Supabase auth + Postgres
 - Jobs: Adzuna → JSearch → Tavily (Apify off by default)
@@ -32,7 +32,7 @@ Career coach app I built for job search: chat with an AI coach, browse live role
 
 ```bash
 cp .env.example .env
-# fill OpenAI, Supabase, Tavily, Adzuna, LangSmith
+# fill Anthropic, Supabase, Tavily, Adzuna, LangSmith
 
 uv sync
 uv run uvicorn app.main:app --reload --port 8000
@@ -51,7 +51,7 @@ This repo is set up for **one free Web Service** via `render.yaml`.
 1. Push to GitHub (see below)
 2. [Render](https://dashboard.render.com) → **New** → **Blueprint** → select this repo
 3. Confirm plan is **Free**
-4. Paste env vars (same names as `.env.example`). Required: `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, plus Adzuna / Tavily / LangSmith as you use them
+4. Paste env vars (same names as `.env.example`). Required: `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, plus Adzuna / Tavily / LangSmith as you use them
 5. Deploy. Health check: `/api/health`
 6. In Supabase Auth → URL config, add `https://YOUR-APP.onrender.com`
 

@@ -1,123 +1,75 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import PublicNav, { PublicFooter } from "../components/PublicNav";
+import { PLANS_FALLBACK } from "../plansFallback";
 
-const FEATURES = [
+/** Career system lanes — only real product surfaces. */
+const SYSTEM_LANES = [
   {
-    id: "overview",
-    tag: "Overview",
-    title: "Dashboard home",
-    blurb: "Jump into Chat, Jobs, Quiz, and Resume from one place.",
-    detail:
-      "Your signed-in home. Free plan chip, quick lanes into every tool, and the same profile that powers the rest of Vetta.",
-  },
-  {
-    id: "chat",
-    tag: "Chat",
-    title: "Coach chat",
-    blurb: "Streaming coaching for fit, rewrites, and cover letters.",
-    detail:
-      "Two chats, thirty messages each. Status lines cycle Thinking, Querying, Generating while tools search and score in the background.",
-  },
-  {
-    id: "jobs",
-    tag: "Jobs",
+    id: "find",
+    phase: "Find",
     title: "Live job hub",
-    blurb: "Recommended, Liked, Applied, External in one board.",
+    outcome: "Roles that match how you search",
+    blurb: "Recommended, Liked, Applied — one board.",
     detail:
-      "Jobs from free providers matched to your roles and locations. Like, mark applied, and open listings without losing your place.",
+      "Openings from free providers matched to your roles and locations. Like listings, mark applied, and open the source without losing your place.",
+    preview: "jobs",
   },
   {
-    id: "quiz",
-    tag: "Interview Quiz",
+    id: "score",
+    phase: "Score",
+    title: "Coach chat",
+    outcome: "Know if you should apply before you do",
+    blurb: "Advice that points you to the right lane.",
+    detail:
+      "Streaming coaching for fit reads, rewrite strategy, and interview angles. When it’s time to act, the coach steers you into Job hub, Resume, or Quiz — message limits apply by plan.",
+    preview: "chat",
+  },
+  {
+    id: "tailor",
+    phase: "Tailor",
+    title: "Live PDF resume",
+    outcome: "Edits that match what you download",
+    blurb: "Watch the real PDF rewrite as you tailor.",
+    detail:
+      "Free includes resume upload for matching and coaching context. The live multi-page PDF studio unlocks on CareerExpert and CareerPro so on-screen edits match the file you export.",
+    preview: "resume",
+  },
+  {
+    id: "practice",
+    phase: "Practice",
     title: "Interview quiz",
+    outcome: "Walk in warm, not guessing",
     blurb: "MCQ drills grounded in your resume and goals.",
     detail:
-      "A separate practice mode so drills do not clog chat. Generate a fresh set when you want another round.",
-  },
-  {
-    id: "resume",
-    tag: "Resume",
-    title: "Live PDF resume",
-    blurb: "Ask for changes and watch the real PDF rewrite.",
-    detail:
-      "Multi-page resume preview that matches download. Undo versions, replace the source file, and export when it looks right.",
-  },
-  {
-    id: "settings",
-    tag: "Settings",
-    title: "Settings",
-    blurb: "Roles, locations, goals, and resume file.",
-    detail:
-      "Keep the profile the hub and quiz read. Upload or replace a PDF/DOCX and steer recommendations without repeating yourself.",
-  },
-  {
-    id: "plans",
-    tag: "Plans",
-    title: "Plans",
-    blurb: "CareerFinder, CareerExpert, CareerPro.",
-    detail:
-      "Upgrade path when you are ready. Free tier covers the core loop while paid tiers are marked TBA.",
+      "A separate practice lane so drills do not clog chat. Generate a fresh set when you want another round — limits apply by plan.",
+    preview: "quiz",
   },
 ];
 
-const HELPS = [
-  "Find roles that fit",
-  "Tailor your resume live",
-  "Practice interviews",
-  "Track what you applied to",
-  "Score fit before you apply",
-  "Write a cover letter fast",
-];
-
-function PreviewOverview() {
-  const tiles = [
-    { tag: "Coach", title: "Chat", meta: "Score fit · rewrite" },
-    { tag: "Jobs", title: "Jobs", meta: "Recommended for you" },
-    { tag: "Drill", title: "Quiz", meta: "MCQ rounds" },
-    { tag: "Live", title: "Resume", meta: "PDF rewrite" },
-  ];
-  return (
-    <div className="fake-ui fake-overview">
-      <div className="fake-top">
-        <span className="fake-plan">Free</span>
-        <span className="fake-user">alex@vetta.dev</span>
-      </div>
-      <div className="fake-grid">
-        {tiles.map((t) => (
-          <div key={t.title} className="fake-tile">
-            <span className="tag">{t.tag}</span>
-            <strong>{t.title}</strong>
-            <span className="meta">{t.meta}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+const IDLE_MS = 5200;
 
 function PreviewChat() {
   const [phase, setPhase] = useState(0);
-  const statuses = ["Thinking...", "Querying...", "Generating..."];
+  const statuses = ["Thinking...", "Reading your materials...", "Coaching..."];
   useEffect(() => {
     const id = setInterval(() => setPhase((p) => (p + 1) % 4), 1100);
     return () => clearInterval(id);
   }, []);
   return (
-    <div className="fake-ui fake-chat">
+    <div className="fake-ui fake-chat fake-ui-lg">
       <div className="fake-bubble you">
-        What percentage of AI engineering jobs are remote right now?
+        Should I apply to this Staff Engineer role?
       </div>
       {phase < 3 ? (
         <div className="fake-bubble ai status">{statuses[phase]}</div>
       ) : (
         <div className="fake-bubble ai">
-          Roughly <strong>38–45%</strong> of AI / ML engineer listings are remote or hybrid
-          in recent US searches. Pure remote sits near the low end; hybrid pushes the range up.
+          Fit around <strong>78%</strong> — strong systems depth. Save it in Job hub, or open Resume to tighten leadership bullets before you apply.
           <span className="stream-cursor" />
         </div>
       )}
-      <div className="fake-compose">Ask anything about jobs or resumes…</div>
+      <div className="fake-compose">Ask for advice — then jump to Hub, Resume, or Quiz…</div>
     </div>
   );
 }
@@ -139,7 +91,7 @@ function PreviewJobs() {
     return () => clearInterval(id);
   }, []);
   return (
-    <div className="fake-ui fake-jobs">
+    <div className="fake-ui fake-jobs fake-ui-lg">
       <div className="fake-tabs">
         {tabs.map((t, i) => (
           <button
@@ -164,6 +116,7 @@ function PreviewJobs() {
         <div className="fake-job-detail">
           <strong>Staff Engineer</strong>
           <p>Build the careers graph. Like · Mark applied · Open</p>
+          <div className="fake-fit-pill">Fit preview · 78%</div>
         </div>
       </div>
     </div>
@@ -183,7 +136,7 @@ function PreviewQuiz() {
     "Listed every responsibility",
   ];
   return (
-    <div className="fake-ui fake-quiz">
+    <div className="fake-ui fake-quiz fake-ui-lg">
       <div className="fake-quiz-meta">Q2 · Behavioral · Round fresh</div>
       <h4>Which answer shows impact best?</h4>
       <div className="fake-opts">
@@ -198,95 +151,107 @@ function PreviewQuiz() {
   );
 }
 
+const RESUME_CHIPS = [
+  "Tighten the summary",
+  "Emphasize measurable impact",
+  "Expand to two pages",
+];
+
 function PreviewResume() {
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 900);
+    const id = setInterval(() => setTick((t) => t + 1), 1100);
     return () => clearInterval(id);
   }, []);
-  const lines = [
-    "Alex Rivera",
-    "alex@email.com · Remote",
-    "SUMMARY",
+  const summary =
     tick % 2 === 0
-      ? "Product engineer shipping career tools…"
-      : "Backend-leaning engineer focused on clarity…",
-    "EXPERIENCE",
-    "Vetta — Engineer · 2024–Present",
-    "- Live multi-page PDF resume editor",
-  ];
+      ? "Product engineer shipping career tools with clear, measurable impact."
+      : "Backend-leaning engineer focused on clarity, systems depth, and shipping.";
   return (
-    <div className="fake-ui fake-resume">
-      <div className="fake-pdf-pages">
-        <div className="fake-pdf-page">
-          {lines.map((line, i) => (
-            <p
-              key={`${line}-${i}`}
-              className={
-                i === 0
-                  ? "name"
-                  : line === line.toUpperCase() && line.length < 20
-                    ? "sec"
-                    : ""
-              }
-            >
-              {line}
-              {i === 3 ? <span className="stream-cursor" /> : null}
-            </p>
-          ))}
-          <div className="fake-page-num">1</div>
+    <div className="fake-ui fake-resume fake-ui-lg fake-resume-studio">
+      <div className="fake-resume-split">
+        <div className="fake-resume-coach">
+          <div className="fake-resume-log">
+            <div className="fake-bubble you">
+              Expand experience into two pages with stronger bullets
+            </div>
+            <div className="fake-bubble ai">
+              Rewrote impact lines and stretched the layout across two pages. Scroll the preview to review.
+            </div>
+            {tick % 3 === 0 ? (
+              <div className="fake-bubble ai status">Writing into the PDF…</div>
+            ) : null}
+          </div>
+          <div className="fake-resume-chips" aria-hidden>
+            {RESUME_CHIPS.map((c, i) => (
+              <span key={c} className={`fake-chip ${i === tick % RESUME_CHIPS.length ? "on" : ""}`}>
+                {c}
+              </span>
+            ))}
+          </div>
+          <div className="fake-compose">What should change on the PDF?</div>
         </div>
-        <div className="fake-pdf-page dim">
-          <p className="sec">PROJECTS</p>
-          <p>Career hub · Quiz · Coach</p>
-          <div className="fake-page-num">2</div>
+
+        <div className="fake-resume-stage">
+          <div className="fake-resume-stage-label">Exact PDF preview · scroll for more pages</div>
+          <div className="fake-resume-paper">
+            <div className="fake-pdf-status">Writing into the PDF…</div>
+            <div className="fake-pdf-sheet">
+              <p className="name">Alex Rivera</p>
+              <p className="muted">alex@email.com · Remote</p>
+              <p className="sec">SUMMARY</p>
+              <p>
+                {summary}
+                <span className="stream-cursor" />
+              </p>
+              <p className="sec">EXPERIENCE</p>
+              <p>
+                <strong>Engineer</strong> — Vetta · 2024–Present
+              </p>
+              <p>• Live multi-page PDF resume editor</p>
+              <p>• Coach-driven rewrites that match the download</p>
+              <p className="sec">PROJECTS</p>
+              <p>Career hub · Quiz · Coach</p>
+              <div className="fake-page-num">1</div>
+            </div>
+            <div className="fake-pdf-sheet dim" aria-hidden>
+              <p className="sec">SKILLS</p>
+              <p>Systems · Product · Interview prep</p>
+              <p className="sec">EDUCATION</p>
+              <p>
+                <strong>B.S. Computer Science</strong> — State University
+              </p>
+              <div className="fake-page-num">2</div>
+            </div>
+          </div>
         </div>
       </div>
-      <div className="fake-resume-bar">Writing into the PDF… · Download ready</div>
-    </div>
-  );
-}
-
-function PreviewSettings() {
-  return (
-    <div className="fake-ui fake-settings">
-      <label>
-        Target roles
-        <div className="fake-field">product manager, backend engineer</div>
-      </label>
-      <label>
-        Locations
-        <div className="fake-field">Remote, Seattle</div>
-      </label>
-      <label>
-        Resume
-        <div className="fake-resume-file">
-          <span>alex-resume.pdf</span>
-          <em>Replace</em>
-        </div>
-      </label>
     </div>
   );
 }
 
 function PreviewPlans() {
-  const [hi, setHi] = useState(1);
+  const [hi, setHi] = useState(2);
   useEffect(() => {
     const id = setInterval(() => setHi((h) => (h + 1) % 3), 1600);
     return () => clearInterval(id);
   }, []);
-  const plans = [
-    { name: "CareerFinder", price: "TBA" },
-    { name: "CareerExpert", price: "TBA" },
-    { name: "CareerPro", price: "TBA" },
-  ];
+  const plans = PLANS_FALLBACK.plans;
   return (
-    <div className="fake-ui fake-plans">
+    <div className="fake-ui fake-plans fake-ui-lg">
       {plans.map((p, i) => (
-        <div key={p.name} className={`fake-plan-card ${i === hi ? "on" : ""}`}>
-          <span className="tag">{i === 0 ? "Start" : i === 1 ? "Grow" : "Pro"}</span>
+        <div key={p.id} className={`fake-plan-card ${i === hi ? "on" : ""}`}>
+          <span className="tag">{p.badge || (i === 2 ? "Full" : "Plan")}</span>
           <strong>{p.name}</strong>
-          <em>{p.price}</em>
+          <em>
+            {p.price}
+            {p.price_period || ""}
+          </em>
+          <ul className="fake-plan-features">
+            {(p.features || []).slice(0, 3).map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
         </div>
       ))}
     </div>
@@ -294,101 +259,156 @@ function PreviewPlans() {
 }
 
 const PREVIEWS = {
-  overview: PreviewOverview,
   chat: PreviewChat,
   jobs: PreviewJobs,
   quiz: PreviewQuiz,
   resume: PreviewResume,
-  settings: PreviewSettings,
   plans: PreviewPlans,
 };
 
 export default function FeaturesPage({ user }) {
-  const [activeId, setActiveId] = useState(FEATURES[0].id);
-  const [helpIndex, setHelpIndex] = useState(0);
+  const [activeId, setActiveId] = useState(SYSTEM_LANES[0].id);
+  const [paused, setPaused] = useState(false);
+  const hoverLock = useRef(false);
 
-  const active = useMemo(
-    () => FEATURES.find((f) => f.id === activeId) || FEATURES[0],
-    [activeId]
-  );
-  const Preview = PREVIEWS[active.id] || PreviewOverview;
+  const active = SYSTEM_LANES.find((f) => f.id === activeId) || SYSTEM_LANES[0];
+  const Preview = PREVIEWS[active.preview] || PreviewJobs;
+  const activeIndex = SYSTEM_LANES.findIndex((f) => f.id === activeId);
+
+  function selectLane(id) {
+    setActiveId(id);
+  }
+
+  useEffect(() => {
+    if (paused || hoverLock.current) return undefined;
+    const id = setInterval(() => {
+      setActiveId((cur) => {
+        const i = SYSTEM_LANES.findIndex((l) => l.id === cur);
+        return SYSTEM_LANES[(i + 1) % SYSTEM_LANES.length].id;
+      });
+    }, IDLE_MS);
+    return () => clearInterval(id);
+  }, [paused, activeId]);
 
   return (
-    <div>
+    <div className="page-public feat-page">
       <PublicNav user={user} />
 
-      <section className="section feat-hero" style={{ borderTop: 0, paddingTop: "3rem" }}>
-        <p className="section-kicker">Features</p>
-        <h2 className="feat-title">
-          Everything in your{" "}
-          <span className="feat-swap">dashboard</span>, shown live.
-        </h2>
-        <p className="section-lead">
-          Hover a section. The fake preview on the right plays like the real product.
+      <section className="section feat-hero feat-hero-roomy">
+        <p className="brand-mark rise">Vetta</p>
+        <p className="section-kicker rise rise-d1">Career system</p>
+        <h1 className="feat-title rise rise-d1">
+          Find → Score → Tailor → Practice —{" "}
+          <span className="feat-swap">one loop</span>, not a pile of AI tabs.
+        </h1>
+        <p className="section-lead rise rise-d2">
+          Hover a lane. The preview plays like the product. Four connected tools that move a search forward.
         </p>
+        <div className="hero-actions rise rise-d3" style={{ marginTop: "1.75rem" }}>
+          <Link className="btn btn-solid" to={user ? "/app" : "/signup"}>
+            {user ? "Open Vetta" : "Start free"}
+          </Link>
+          <Link className="btn btn-ghost" to="/pricing">
+            Compare plans
+          </Link>
+        </div>
       </section>
 
-      <section className="section feat-explorer-wrap">
-        <div className="feat-explorer">
-          <div className="feat-list" role="list">
-            {FEATURES.map((f) => {
-              const on = f.id === activeId;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  role="listitem"
-                  className={`feat-row ${on ? "active" : ""}`}
-                  onMouseEnter={() => setActiveId(f.id)}
-                  onFocus={() => setActiveId(f.id)}
-                  onClick={() => setActiveId(f.id)}
-                >
-                  <span className="feat-row-tag">{f.tag}</span>
-                  <span className="feat-row-title">{f.title}</span>
-                  <span className="feat-row-blurb">{f.blurb}</span>
-                </button>
-              );
-            })}
-          </div>
+      <section
+        className="section feat-theater-wrap"
+        onMouseEnter={() => {
+          hoverLock.current = true;
+          setPaused(true);
+        }}
+        onMouseLeave={() => {
+          hoverLock.current = false;
+          setPaused(false);
+        }}
+        onFocusCapture={() => setPaused(true)}
+        onBlurCapture={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) setPaused(false);
+        }}
+      >
+        <div className="feat-lane-rail" role="tablist" aria-label="Career workflow">
+          {SYSTEM_LANES.map((lane, i) => {
+            const on = lane.id === activeId;
+            return (
+              <button
+                key={lane.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                className={`feat-lane-chip ${on ? "active" : ""}`}
+                onMouseEnter={() => selectLane(lane.id)}
+                onFocus={() => selectLane(lane.id)}
+                onClick={() => selectLane(lane.id)}
+              >
+                <span className="feat-lane-num">{String(i + 1).padStart(2, "0")}</span>
+                <span className="feat-lane-phase">{lane.phase}</span>
+                <strong>{lane.title}</strong>
+                <span className="feat-lane-blurb">{lane.blurb}</span>
+              </button>
+            );
+          })}
+        </div>
 
-          <aside className="feat-panel" key={active.id}>
-            <p className="feat-panel-kicker">{active.tag}</p>
-            <h3>{active.title}</h3>
+        <div className="feat-theater" key={active.id}>
+          <div className="feat-theater-copy">
+            <p className="feat-panel-kicker">{active.phase}</p>
+            <h2>{active.title}</h2>
+            <p className="feat-outcome">{active.outcome}</p>
             <p className="feat-panel-detail">{active.detail}</p>
-            <div className="feat-preview feat-preview-live">
+            <div className="feat-progress" aria-hidden>
+              {SYSTEM_LANES.map((l, i) => (
+                <span key={l.id} className={i === activeIndex ? "on" : ""} />
+              ))}
+            </div>
+          </div>
+          <div className="feat-theater-stage">
+            <div className="feat-preview feat-preview-live feat-preview-xl">
               <div className="feat-preview-head">
-                Live preview · {active.tag}
+                Live preview · {active.phase}
+                <span className="feat-live-dot" aria-hidden />
               </div>
               <Preview />
             </div>
-          </aside>
+          </div>
         </div>
       </section>
 
-      <section className="section">
-        <p className="section-kicker">Help</p>
-        <h2>What Vetta can help with.</h2>
-        <p className="section-lead">Click a line. Watch it lock in.</p>
-        <div className="feat-help-board">
-          {HELPS.map((label, i) => (
-            <button
-              key={label}
-              type="button"
-              className={`feat-help-chip ${i === helpIndex ? "active" : ""}`}
-              onMouseEnter={() => setHelpIndex(i)}
-              onClick={() => setHelpIndex(i)}
-            >
-              {label}
-            </button>
-          ))}
+      <section className="section feat-plans-band">
+        <div className="feat-plans-intro">
+          <p className="section-kicker">Plans</p>
+          <h2>Same loop. Deeper limits.</h2>
+          <p className="section-lead">
+            Free teaches the loop. Expert unlocks the live PDF studio and higher coaching headroom.
+            Pro is for an active search — highest caps, priority matching, and early access as new tools ship.
+          </p>
         </div>
-        <p className="feat-help-echo" key={helpIndex}>
-          {HELPS[helpIndex]}.
-        </p>
-        <div style={{ marginTop: "2.5rem" }}>
-          <Link className="btn btn-solid" to={user ? "/app" : "/signup"}>
-            {user ? "Open dashboard" : "Get started free"}
+        <div className="feat-plans-preview">
+          <PreviewPlans />
+        </div>
+        <div className="hero-actions" style={{ marginTop: "1.75rem" }}>
+          <Link className="btn btn-ghost" to="/pricing">
+            See Free vs Expert vs Pro
           </Link>
+        </div>
+      </section>
+
+      <section className="section cta-band">
+        <div className="cta-band-inner">
+          <h2>Run the system on your search.</h2>
+          <p className="section-lead" style={{ margin: "0 auto 1.5rem", textAlign: "center" }}>
+            Free gets you into the loop. Expert and Pro raise limits and unlock live PDF editing.
+          </p>
+          <div className="hero-actions" style={{ justifyContent: "center" }}>
+            <Link className="btn btn-solid" to={user ? "/app" : "/signup"}>
+              {user ? "Open Vetta" : "Get started free"}
+            </Link>
+            <Link className="btn btn-ghost" to="/pricing">
+              Compare plans
+            </Link>
+          </div>
         </div>
       </section>
 

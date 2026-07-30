@@ -7,6 +7,10 @@ import FeaturesPage from "./pages/FeaturesPage";
 import PricingPage from "./pages/PricingPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage, {
+  capturePasswordRecoveryFromLocation,
+} from "./pages/ResetPasswordPage";
 import DashboardLayout from "./pages/dashboard/DashboardLayout";
 import OverviewPage from "./pages/dashboard/OverviewPage";
 import ChatPage from "./pages/ChatPage";
@@ -14,7 +18,8 @@ import HubPage from "./pages/HubPage";
 import QuizPage from "./pages/QuizPage";
 import SettingsPage from "./pages/SettingsPage";
 import ResumePage from "./pages/ResumePage";
-import PageTransition from "./components/PageTransition";
+import PlansPage from "./pages/PlansPage";
+import TryPage from "./pages/TryPage";
 
 function Protected({ user, children }) {
  if (!user) return <Navigate to="/login" replace />;
@@ -26,6 +31,14 @@ export default function App() {
  const [profile, setProfile] = useState(null);
  const [loading, setLoading] = useState(true);
  const navigate = useNavigate();
+
+ // Capture recovery tokens before the loading screen / Strict Mode remount can drop the hash.
+ if (
+   typeof window !== "undefined" &&
+   window.location.pathname.replace(/\/$/, "") === "/reset-password"
+ ) {
+   capturePasswordRecoveryFromLocation();
+ }
 
  async function refreshMe() {
  if (!getToken()) {
@@ -40,6 +53,11 @@ export default function App() {
  }
 
  useEffect(() => {
+ // Recovery link lands with hash tokens; don't race a stale JWT against /api/me.
+ if (window.location.pathname.replace(/\/$/, "") === "/reset-password") {
+ setLoading(false);
+ return;
+ }
  refreshMe()
  .catch(() => {
  setToken(null);
@@ -70,9 +88,10 @@ export default function App() {
  }
 
  return (
- <PageTransition>
  <Routes>
  <Route path="/" element={<LandingPage user={user} />} />
+ <Route path="/try" element={<TryPage user={user} />} />
+ <Route path="/take-quiz" element={<Navigate to="/try" replace />} />
  <Route path="/features" element={<FeaturesPage user={user} />} />
  <Route path="/pricing" element={<PricingPage user={user} />} />
  <Route
@@ -85,19 +104,33 @@ export default function App() {
  )
  }
  />
- <Route
- path="/signup"
- element={
- user ? (
- <Navigate to="/app" replace />
- ) : (
- <SignupPage onAuth={refreshMe} />
- )
- }
- />
+      <Route
+        path="/signup"
+        element={
+          user ? (
+            <Navigate to="/app" replace />
+          ) : (
+            <SignupPage onAuth={refreshMe} />
+          )
+        }
+      />
+      <Route
+        path="/forgot-password"
+        element={
+          user ? (
+            <Navigate to="/app" replace />
+          ) : (
+            <ForgotPasswordPage />
+          )
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={<ResetPasswordPage onAuth={refreshMe} />}
+      />
 
- <Route
- path="/app"
+      <Route
+        path="/app"
  element={
  <Protected user={user}>
  <DashboardLayout
@@ -110,8 +143,8 @@ export default function App() {
  }
  >
  <Route index element={<OverviewPage profile={profile} />} />
- <Route path="chat" element={<ChatPage />} />
- <Route path="chat/:chatId" element={<ChatPage />} />
+ <Route path="chat" element={<ChatPage profile={profile} />} />
+ <Route path="chat/:chatId" element={<ChatPage profile={profile} />} />
  <Route
  path="hub"
  element={<HubPage profile={profile} onProfile={setProfile} />}
@@ -125,12 +158,12 @@ export default function App() {
  path="settings"
  element={<SettingsPage profile={profile} onProfile={setProfile} />}
  />
+ <Route path="plans" element={<PlansPage />} />
  </Route>
 
  <Route path="/auth" element={<Navigate to="/login" replace />} />
  <Route path="/chat" element={<Navigate to="/app/chat" replace />} />
  <Route path="*" element={<Navigate to="/" replace />} />
  </Routes>
- </PageTransition>
  );
 }
