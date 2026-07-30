@@ -14,10 +14,14 @@ Career coach app I built for job search: chat with an AI coach, browse live role
 | **Jobs** | Recommended / Liked / Applied / External hub (Adzuna first, free tier) |
 | **Interview Quiz** | MCQs grounded in your resume and goals |
 | **Resume** | Tell it what to change; preview is the actual multi-page PDF; download when ready |
-| **Settings / Plans** | Preferences, upload, Stripe Checkout for Expert/Pro, Customer Portal |
+| **Settings / Plans** | Preferences, resume upload; paid plans TBA |
 
 <p align="center">
   <img src="docs/screenshots/features.png" alt="Features page with live previews" width="900" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/try.png" alt="Public Take a quiz funnel" width="900" />
 </p>
 
 ## Stack
@@ -26,7 +30,7 @@ Career coach app I built for job search: chat with an AI coach, browse live role
 - React (Vite) UI, served from the same Render service in production
 - Supabase auth + Postgres
 - Jobs: Adzuna → JSearch → Tavily (Apify off by default)
-- Stripe Checkout + Customer Portal (subscriptions)
+- Stripe optional (paid plans TBA)
 - LangSmith tracing optional
 
 ## Run locally
