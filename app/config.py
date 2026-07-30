@@ -41,6 +41,9 @@ SUPABASE_SECRET_KEY = (
 # Password reset email redirect (e.g. http://localhost:5173/reset-password).
 # If empty, forgot-password uses the request Origin + /reset-password.
 PASSWORD_RESET_REDIRECT_URL = os.getenv("PASSWORD_RESET_REDIRECT_URL", "").strip()
+# Email confirmation redirect after signup (must be allowlisted in Supabase Auth → URL config).
+# If empty, signup uses the request Origin + /confirm-email.
+EMAIL_CONFIRM_REDIRECT_URL = os.getenv("EMAIL_CONFIRM_REDIRECT_URL", "").strip()
 
 # Stripe (keys + price IDs live in .env only)
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
@@ -106,7 +109,28 @@ PUBLIC_TRY_RESULTS_PER_HOUR = int(os.getenv("PUBLIC_TRY_RESULTS_PER_HOUR", "20")
 PUBLIC_TRY_RESUME_MAX_BYTES = int(os.getenv("PUBLIC_TRY_RESUME_MAX_BYTES", str(1_000_000)))
 
 # Anthropic (Claude) — primary LLM provider
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+if ANTHROPIC_API_KEY:
+    # Keep process env in sync so SDKs that read os.environ also work.
+    os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
+
+
+def anthropic_api_key() -> str:
+    """Fresh Anthropic key (re-reads env so reloads / late dotenv still work)."""
+    key = (os.getenv("ANTHROPIC_API_KEY") or ANTHROPIC_API_KEY or "").strip()
+    if key:
+        os.environ["ANTHROPIC_API_KEY"] = key
+    return key
+
+
+def require_anthropic_api_key() -> str:
+    key = anthropic_api_key()
+    if not key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is missing. Add it to .env (local) or Render env vars, then restart the API."
+        )
+    return key
+
 
 # Agent / generation cost knobs (Claude models)
 AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-4-5")

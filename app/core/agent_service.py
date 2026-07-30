@@ -321,7 +321,7 @@ def llm_agent_stream(
         temperature=0.2,
         streaming=True,
         max_tokens=config.AGENT_MAX_TOKENS,
-        api_key=config.ANTHROPIC_API_KEY or None,
+        api_key=config.require_anthropic_api_key(),
     )
     agent = create_agent(model, tools=TOOLS, system_prompt=SYSTEM_PROMPT)
     payload = {"messages": [("user", _build_user_message(user_input, chat_history, resume))]}

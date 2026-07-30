@@ -75,3 +75,7 @@ services:
         sync: false
       - key: APP_URL
         sync: false
+      - key: PASSWORD_RESET_REDIRECT_URL
+        sync: false
+      - key: EMAIL_CONFIRM_REDIRECT_URL
+        sync: false

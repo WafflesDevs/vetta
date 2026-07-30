@@ -83,7 +83,7 @@ def edit_resume_stream(
         temperature=0.35,
         streaming=True,
         max_tokens=2200,
-        api_key=config.ANTHROPIC_API_KEY or None,
+        api_key=config.require_anthropic_api_key(),
     )
 
     user_prompt = f"""Current resume:

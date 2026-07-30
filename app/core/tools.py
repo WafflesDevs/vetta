@@ -39,7 +39,7 @@ def _llm(
         model=model or config.AGENT_MODEL,
         temperature=temperature,
         max_tokens=max_tokens,
-        api_key=config.ANTHROPIC_API_KEY or None,
+        api_key=config.require_anthropic_api_key(),
     )
 
 

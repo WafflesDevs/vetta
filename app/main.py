@@ -20,6 +20,7 @@ from app.config import (
     JOBS_REFRESH_COOLDOWN_SECONDS,
     QUIZ_QUESTIONS_PER_CYCLE,
     PASSWORD_RESET_REDIRECT_URL,
+    EMAIL_CONFIRM_REDIRECT_URL,
     PUBLIC_TRY_QUESTIONS,
     PUBLIC_TRY_QUIZ_PER_HOUR,
     PUBLIC_TRY_RESULTS_PER_HOUR,
@@ -109,6 +110,10 @@ class ResetPasswordBody(BaseModel):
 class VerifyRecoveryBody(BaseModel):
     token_hash: str
     type: str = "recovery"
+
+
+class ResendConfirmationBody(BaseModel):
+    email: EmailStr
 
 
 class MessageBody(BaseModel):
@@ -212,47 +217,103 @@ def _mark_hub_refresh(user_id: str) -> None:
 
 # ---------- auth ----------
 
+def _spa_origin_from_request(request: Request) -> str:
+    origin = (request.headers.get("origin") or "").strip()
+    if not origin:
+        referer = (request.headers.get("referer") or "").strip()
+        if referer:
+            parsed = urlparse(referer)
+            if parsed.scheme and parsed.netloc:
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+    if origin:
+        host = urlparse(origin).hostname or ""
+        if host in {"127.0.0.1", "localhost"} and ":8000" in origin:
+            return "http://localhost:5173"
+        return origin.rstrip("/")
+    return "http://localhost:5173"
+
+
+def _password_reset_redirect(request: Request) -> str:
+    """Redirect target for Supabase recovery emails (must be Vite SPA in local dev)."""
+    if PASSWORD_RESET_REDIRECT_URL:
+        return PASSWORD_RESET_REDIRECT_URL
+    return f"{_spa_origin_from_request(request)}/reset-password"
+
+
+def _email_confirm_redirect(request: Request) -> str:
+    """Redirect target for signup confirmation emails."""
+    if EMAIL_CONFIRM_REDIRECT_URL:
+        return EMAIL_CONFIRM_REDIRECT_URL
+    return f"{_spa_origin_from_request(request)}/confirm-email"
+
+
+def _user_email_confirmed(user) -> bool:
+    if not user:
+        return False
+    confirmed = getattr(user, "email_confirmed_at", None) or getattr(
+        user, "confirmed_at", None
+    )
+    if confirmed:
+        return True
+    if isinstance(user, dict):
+        return bool(user.get("email_confirmed_at") or user.get("confirmed_at"))
+    return False
+
+
 @app.post("/api/auth/signup")
-def signup(body: SignupBody):
+def signup(body: SignupBody, request: Request):
+    """Create account. Always requires email confirmation before login."""
     client = get_anon_client()
+    redirect_to = _email_confirm_redirect(request)
     try:
-        result = client.auth.sign_up({
-            "email": body.email,
-            "password": body.password,
-            "options": {"data": {"display_name": body.display_name}},
-        })
+        result = client.auth.sign_up(
+            {
+                "email": body.email,
+                "password": body.password,
+                "options": {
+                    "data": {"display_name": body.display_name},
+                    "email_redirect_to": redirect_to,
+                },
+            }
+        )
     except Exception as exc:
         traceback.print_exc()
         detail = str(exc) or "Could not sign up."
-        # Common Supabase messages
         low = detail.lower()
         if "already" in low or "registered" in low:
-            raise HTTPException(status_code=400, detail="That email is already registered. Try logging in.")
-        raise HTTPException(status_code=400, detail="Could not sign up. Try another email or try again.")
+            raise HTTPException(
+                status_code=400,
+                detail="That email is already registered. Try logging in.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail="Could not sign up. Try another email or try again.",
+        )
 
     if not result.user:
         raise HTTPException(status_code=400, detail="Could not sign up. Try another email.")
 
-    # profile row is created by the DB trigger; update display name if we have a session
-    if body.display_name and result.session:
+    # Never auto-login on signup — confirm email first.
+    # Turn "Confirm email" ON in Supabase Auth settings so login is blocked until verified.
+    if body.display_name and result.session and _user_email_confirmed(result.user):
         try:
             user_client = get_anon_client()
             user_client.postgrest.auth(result.session.access_token)
-            user_client.table("profiles").update({
-                "display_name": body.display_name,
-                "email": body.email,
-            }).eq("id", result.user.id).execute()
+            user_client.table("profiles").update(
+                {
+                    "display_name": body.display_name,
+                    "email": body.email,
+                }
+            ).eq("id", result.user.id).execute()
         except Exception:
             traceback.print_exc()
-            # Don't fail signup if profile update fails (email-confirm flows)
 
     return {
         "user": {"id": result.user.id, "email": result.user.email},
-        "session": {
-            "access_token": result.session.access_token if result.session else None,
-            "refresh_token": result.session.refresh_token if result.session else None,
-        },
-        "note": "Email sent! Check your inbox to confirm, then log in.",
+        "session": {"access_token": None, "refresh_token": None},
+        "requires_email_confirmation": True,
+        "note": "Check your email to confirm your account, then log in.",
+        "redirect_to": redirect_to,
     }
 
 
@@ -260,15 +321,29 @@ def signup(body: SignupBody):
 def login(body: AuthBody):
     client = get_anon_client()
     try:
-        result = client.auth.sign_in_with_password({
-            "email": body.email,
-            "password": body.password,
-        })
-    except Exception:
+        result = client.auth.sign_in_with_password(
+            {
+                "email": body.email,
+                "password": body.password,
+            }
+        )
+    except Exception as exc:
+        low = str(exc).lower()
+        if "confirm" in low or "not confirmed" in low or "email not confirmed" in low:
+            raise HTTPException(
+                status_code=403,
+                detail="Confirm your email before logging in. Check your inbox for the link.",
+            )
         raise HTTPException(status_code=401, detail="Wrong email or password.")
 
     if not result.session:
         raise HTTPException(status_code=401, detail="Wrong email or password.")
+
+    if result.user and not _user_email_confirmed(result.user):
+        raise HTTPException(
+            status_code=403,
+            detail="Confirm your email before logging in. Check your inbox for the link.",
+        )
 
     return {
         "user": {"id": result.user.id, "email": result.user.email},
@@ -289,24 +364,26 @@ def logout(token: str = Depends(get_token)):
     return {"ok": True}
 
 
-def _password_reset_redirect(request: Request) -> str:
-    """Redirect target for Supabase recovery emails (must be Vite SPA in local dev)."""
-    if PASSWORD_RESET_REDIRECT_URL:
-        return PASSWORD_RESET_REDIRECT_URL
-    origin = (request.headers.get("origin") or "").strip()
-    if not origin:
-        referer = (request.headers.get("referer") or "").strip()
-        if referer:
-            parsed = urlparse(referer)
-            if parsed.scheme and parsed.netloc:
-                origin = f"{parsed.scheme}://{parsed.netloc}"
-    # Prefer the SPA origin; avoid sending users to the API host (:8000).
-    if origin:
-        host = urlparse(origin).hostname or ""
-        if host in {"127.0.0.1", "localhost"} and ":8000" in origin:
-            return "http://localhost:5173/reset-password"
-        return f"{origin.rstrip('/')}/reset-password"
-    return "http://localhost:5173/reset-password"
+@app.post("/api/auth/resend-confirmation")
+def resend_confirmation(body: ResendConfirmationBody, request: Request):
+    """Resend signup confirmation email. Always ok (no email leak)."""
+    client = get_anon_client()
+    redirect_to = _email_confirm_redirect(request)
+    try:
+        client.auth.resend(
+            {
+                "type": "signup",
+                "email": body.email,
+                "options": {"email_redirect_to": redirect_to},
+            }
+        )
+    except Exception:
+        traceback.print_exc()
+    return {
+        "ok": True,
+        "message": "If that email needs confirmation, we sent another link.",
+        "redirect_to": redirect_to,
+    }
 
 
 @app.post("/api/auth/forgot-password")
@@ -330,14 +407,14 @@ def forgot_password(body: ForgotPasswordBody, request: Request):
 
 @app.post("/api/auth/verify-recovery")
 def verify_recovery(body: VerifyRecoveryBody):
-    """Exchange a recovery token_hash (query-param flow) for a session."""
+    """Exchange a recovery/signup token_hash (query-param flow) for a session."""
     client = get_anon_client()
     token_hash = (body.token_hash or "").strip()
     otp_type = (body.type or "recovery").strip() or "recovery"
     if not token_hash:
         raise HTTPException(
             status_code=400,
-            detail="Reset link is missing a token. Request a new one from Forgot password.",
+            detail="Link is missing a token. Request a new one.",
         )
     try:
         result = client.auth.verify_otp(
@@ -350,13 +427,13 @@ def verify_recovery(body: VerifyRecoveryBody):
         traceback.print_exc()
         raise HTTPException(
             status_code=400,
-            detail="Reset link is invalid or expired. Request a new one from Forgot password.",
-        )
+            detail="That link is invalid or expired. Request a new one.",
+        ) from None
 
     if not result.session:
         raise HTTPException(
             status_code=400,
-            detail="Reset link is invalid or expired. Request a new one from Forgot password.",
+            detail="Could not verify that link. Request a new one.",
         )
 
     return {

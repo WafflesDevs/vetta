@@ -182,7 +182,7 @@ def _generate_quiz_anthropic(
         model=config.AGENT_MODEL,
         temperature=0.95,
         max_tokens=1400,
-        api_key=config.ANTHROPIC_API_KEY or None,
+        api_key=config.require_anthropic_api_key(),
     )
     seed = f"{uuid.uuid4().hex[:10]}-{random.randint(1000, 9999)}"
     avoided = [q.strip() for q in (avoid_questions or []) if q and str(q).strip()]

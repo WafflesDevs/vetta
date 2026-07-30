@@ -47,7 +47,15 @@ cd frontend && npm install && npm run dev
 
 Open http://localhost:5173
 
-Supabase: run `supabase/schema.sql` (and `job_saves.sql` if you need likes/applied). For local signup, turn off email confirm in Auth settings.
+Supabase: run `supabase/schema.sql` (and `job_saves.sql` if you need likes/applied).
+
+**Email confirmation (required):** In Supabase → Authentication → Providers → Email, turn **Confirm email** ON. In Authentication → URL configuration, allowlist:
+
+- `http://localhost:5173/confirm-email` (local)
+- `https://YOUR-APP.onrender.com/confirm-email` (prod)
+- the same hosts for `/reset-password`
+
+Signup always sends a confirmation email and will not log the user in until they confirm.
 
 ### Billing (TBA)
 
