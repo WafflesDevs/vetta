@@ -20,7 +20,6 @@ from app.config import (
     JOBS_REFRESH_COOLDOWN_SECONDS,
     QUIZ_QUESTIONS_PER_CYCLE,
     PASSWORD_RESET_REDIRECT_URL,
-    EMAIL_CONFIRM_REDIRECT_URL,
     PUBLIC_TRY_QUESTIONS,
     PUBLIC_TRY_QUIZ_PER_HOUR,
     PUBLIC_TRY_RESULTS_PER_HOUR,
@@ -110,10 +109,6 @@ class ResetPasswordBody(BaseModel):
 class VerifyRecoveryBody(BaseModel):
     token_hash: str
     type: str = "recovery"
-
-
-class ResendConfirmationBody(BaseModel):
-    email: EmailStr
 
 
 class MessageBody(BaseModel):
@@ -240,40 +235,16 @@ def _password_reset_redirect(request: Request) -> str:
     return f"{_spa_origin_from_request(request)}/reset-password"
 
 
-def _email_confirm_redirect(request: Request) -> str:
-    """Redirect target for signup confirmation emails."""
-    if EMAIL_CONFIRM_REDIRECT_URL:
-        return EMAIL_CONFIRM_REDIRECT_URL
-    return f"{_spa_origin_from_request(request)}/confirm-email"
-
-
-def _user_email_confirmed(user) -> bool:
-    if not user:
-        return False
-    confirmed = getattr(user, "email_confirmed_at", None) or getattr(
-        user, "confirmed_at", None
-    )
-    if confirmed:
-        return True
-    if isinstance(user, dict):
-        return bool(user.get("email_confirmed_at") or user.get("confirmed_at"))
-    return False
-
-
 @app.post("/api/auth/signup")
 def signup(body: SignupBody, request: Request):
-    """Create account. Always requires email confirmation before login."""
+    """Create account and return a session when Supabase Confirm email is OFF."""
     client = get_anon_client()
-    redirect_to = _email_confirm_redirect(request)
     try:
         result = client.auth.sign_up(
             {
                 "email": body.email,
                 "password": body.password,
-                "options": {
-                    "data": {"display_name": body.display_name},
-                    "email_redirect_to": redirect_to,
-                },
+                "options": {"data": {"display_name": body.display_name}},
             }
         )
     except Exception as exc:
@@ -293,9 +264,17 @@ def signup(body: SignupBody, request: Request):
     if not result.user:
         raise HTTPException(status_code=400, detail="Could not sign up. Try another email.")
 
-    # Never auto-login on signup — confirm email first.
-    # Turn "Confirm email" ON in Supabase Auth settings so login is blocked until verified.
-    if body.display_name and result.session and _user_email_confirmed(result.user):
+    # Empty identities = existing email (Supabase anti-enumeration).
+    identities = getattr(result.user, "identities", None) or []
+    if isinstance(result.user, dict):
+        identities = result.user.get("identities") or identities
+    if not list(identities or []):
+        raise HTTPException(
+            status_code=400,
+            detail="That email is already registered. Try logging in.",
+        )
+
+    if body.display_name and result.session:
         try:
             user_client = get_anon_client()
             user_client.postgrest.auth(result.session.access_token)
@@ -308,12 +287,22 @@ def signup(body: SignupBody, request: Request):
         except Exception:
             traceback.print_exc()
 
+    if not result.session:
+        # Confirm email is still ON in Supabase — app expects immediate session.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Signup needs Confirm email OFF in Supabase "
+                "(Authentication → Providers → Email), then try again."
+            ),
+        )
+
     return {
         "user": {"id": result.user.id, "email": result.user.email},
-        "session": {"access_token": None, "refresh_token": None},
-        "requires_email_confirmation": True,
-        "note": "Check your email to confirm your account, then log in.",
-        "redirect_to": redirect_to,
+        "session": {
+            "access_token": result.session.access_token,
+            "refresh_token": result.session.refresh_token,
+        },
     }
 
 
@@ -327,23 +316,11 @@ def login(body: AuthBody):
                 "password": body.password,
             }
         )
-    except Exception as exc:
-        low = str(exc).lower()
-        if "confirm" in low or "not confirmed" in low or "email not confirmed" in low:
-            raise HTTPException(
-                status_code=403,
-                detail="Confirm your email before logging in. Check your inbox for the link.",
-            )
+    except Exception:
         raise HTTPException(status_code=401, detail="Wrong email or password.")
 
     if not result.session:
         raise HTTPException(status_code=401, detail="Wrong email or password.")
-
-    if result.user and not _user_email_confirmed(result.user):
-        raise HTTPException(
-            status_code=403,
-            detail="Confirm your email before logging in. Check your inbox for the link.",
-        )
 
     return {
         "user": {"id": result.user.id, "email": result.user.email},
@@ -362,28 +339,6 @@ def logout(token: str = Depends(get_token)):
     except Exception:
         pass
     return {"ok": True}
-
-
-@app.post("/api/auth/resend-confirmation")
-def resend_confirmation(body: ResendConfirmationBody, request: Request):
-    """Resend signup confirmation email. Always ok (no email leak)."""
-    client = get_anon_client()
-    redirect_to = _email_confirm_redirect(request)
-    try:
-        client.auth.resend(
-            {
-                "type": "signup",
-                "email": body.email,
-                "options": {"email_redirect_to": redirect_to},
-            }
-        )
-    except Exception:
-        traceback.print_exc()
-    return {
-        "ok": True,
-        "message": "If that email needs confirmation, we sent another link.",
-        "redirect_to": redirect_to,
-    }
 
 
 @app.post("/api/auth/forgot-password")
@@ -407,7 +362,7 @@ def forgot_password(body: ForgotPasswordBody, request: Request):
 
 @app.post("/api/auth/verify-recovery")
 def verify_recovery(body: VerifyRecoveryBody):
-    """Exchange a recovery/signup token_hash (query-param flow) for a session."""
+    """Exchange a recovery token_hash (query-param flow) for a session."""
     client = get_anon_client()
     token_hash = (body.token_hash or "").strip()
     otp_type = (body.type or "recovery").strip() or "recovery"

@@ -41,9 +41,6 @@ SUPABASE_SECRET_KEY = (
 # Password reset email redirect (e.g. http://localhost:5173/reset-password).
 # If empty, forgot-password uses the request Origin + /reset-password.
 PASSWORD_RESET_REDIRECT_URL = os.getenv("PASSWORD_RESET_REDIRECT_URL", "").strip()
-# Email confirmation redirect after signup (must be allowlisted in Supabase Auth → URL config).
-# If empty, signup uses the request Origin + /confirm-email.
-EMAIL_CONFIRM_REDIRECT_URL = os.getenv("EMAIL_CONFIRM_REDIRECT_URL", "").strip()
 
 # Stripe (keys + price IDs live in .env only)
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")

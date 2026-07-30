@@ -49,13 +49,7 @@ Open http://localhost:5173
 
 Supabase: run `supabase/schema.sql` (and `job_saves.sql` if you need likes/applied).
 
-**Email confirmation (required):** In Supabase → Authentication → Providers → Email, turn **Confirm email** ON. In Authentication → URL configuration, allowlist:
-
-- `http://localhost:5173/confirm-email` (local)
-- `https://YOUR-APP.onrender.com/confirm-email` (prod)
-- the same hosts for `/reset-password`
-
-Signup always sends a confirmation email and will not log the user in until they confirm.
+**Auth:** Authentication → Providers → Email → turn **Confirm email** OFF so signup returns a session immediately. Allowlist `http://localhost:5173/reset-password` (and prod) under URL configuration for password reset.
 
 ### Billing (TBA)
 

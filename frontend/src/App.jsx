@@ -11,9 +11,6 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage, {
   capturePasswordRecoveryFromLocation,
 } from "./pages/ResetPasswordPage";
-import ConfirmEmailPage, {
-  captureEmailConfirmFromLocation,
-} from "./pages/ConfirmEmailPage";
 import DashboardLayout from "./pages/dashboard/DashboardLayout";
 import OverviewPage from "./pages/dashboard/OverviewPage";
 import ChatPage from "./pages/ChatPage";
@@ -35,18 +32,12 @@ export default function App() {
  const [loading, setLoading] = useState(true);
  const navigate = useNavigate();
 
- // Capture recovery / email-confirm tokens before the loading screen / Strict Mode remount can drop the hash.
+ // Capture recovery tokens before the loading screen / Strict Mode remount can drop the hash.
  if (
    typeof window !== "undefined" &&
    window.location.pathname.replace(/\/$/, "") === "/reset-password"
  ) {
    capturePasswordRecoveryFromLocation();
- }
- if (
-   typeof window !== "undefined" &&
-   window.location.pathname.replace(/\/$/, "") === "/confirm-email"
- ) {
-   captureEmailConfirmFromLocation();
  }
 
  async function refreshMe() {
@@ -66,11 +57,8 @@ export default function App() {
  }
 
  useEffect(() => {
- // Recovery / confirm-email links land with hash tokens; don't race a stale JWT against /api/me.
- if (
-   window.location.pathname.replace(/\/$/, "") === "/reset-password" ||
-   window.location.pathname.replace(/\/$/, "") === "/confirm-email"
- ) {
+ // Recovery link lands with hash tokens; don't race a stale JWT against /api/me.
+ if (window.location.pathname.replace(/\/$/, "") === "/reset-password") {
  setLoading(false);
  return;
  }
@@ -129,10 +117,6 @@ export default function App() {
             <SignupPage onAuth={refreshMe} />
           )
         }
-      />
-      <Route
-        path="/confirm-email"
-        element={<ConfirmEmailPage onAuth={refreshMe} />}
       />
       <Route
         path="/forgot-password"

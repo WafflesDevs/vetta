@@ -14,7 +14,7 @@ export function setToken(token) {
 function isAuthPage() {
   return (
     typeof window !== "undefined" &&
-    /^\/(login|signup|forgot-password|reset-password|confirm-email)\/?$/.test(window.location.pathname)
+    /^\/(login|signup|forgot-password|reset-password)\/?$/.test(window.location.pathname)
   );
 }
 

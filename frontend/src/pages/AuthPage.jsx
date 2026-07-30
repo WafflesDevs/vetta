@@ -9,13 +9,11 @@ export default function AuthPage({ onAuth }) {
  const [password, setPassword] = useState("");
  const [displayName, setDisplayName] = useState("");
  const [error, setError] = useState("");
- const [note, setNote] = useState("");
  const [busy, setBusy] = useState(false);
 
  async function submit(e) {
  e.preventDefault();
  setError("");
- setNote("");
  setBusy(true);
  try {
  const path = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
@@ -29,13 +27,8 @@ export default function AuthPage({ onAuth }) {
  body: JSON.stringify(body),
  });
 
- if (mode === "signup" || !data.session?.access_token) {
- setNote(
- data.note ||
- "Check your email to confirm your account, then log in."
- );
- setMode("login");
- return;
+ if (!data.session?.access_token) {
+ throw new Error("Auth failed — no session returned.");
  }
  await onAuth(data.session);
  } catch (err) {
@@ -68,7 +61,6 @@ export default function AuthPage({ onAuth }) {
  <p className="sub">2 chats · 30 messages each · full access</p>
 
  {error && <div className="error">{error}</div>}
- {note && <div className="alert alert-ok">{note}</div>}
 
  {mode === "signup" && (
  <div className="field">
