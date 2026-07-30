@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import Logo from "../Logo";
 
@@ -12,7 +11,8 @@ export default function QuizPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [cyclesRemaining, setCyclesRemaining] = useState(null);
-  const [plan, setPlan] = useState("free");
+  const [maxCycles, setMaxCycles] = useState(2);
+  const [resetIn, setResetIn] = useState(0);
 
   const canMoreRounds = cyclesRemaining === null || cyclesRemaining > 0;
 
@@ -34,10 +34,11 @@ export default function QuizPage() {
       if (!next.length) throw new Error("No questions came back. Try again.");
       setQuestions(next);
       if (data.limits) {
-        setPlan(data.limits.plan || "free");
+        setMaxCycles(data.limits.max_cycles ?? 2);
         setCyclesRemaining(
           data.limits.cycles_remaining === undefined ? null : data.limits.cycles_remaining
         );
+        setResetIn(Number(data.limits.reset_in_seconds || 0));
       }
     } catch (err) {
       setError(err.message);
@@ -72,17 +73,14 @@ export default function QuizPage() {
 
   const q = questions[index];
   const idle = !questions.length && !busy && !done;
-  const isFree = plan === "free";
+  const waitMins = Math.max(1, Math.ceil(resetIn / 60));
 
   return (
     <div>
       <div className="page-title">
         <div>
           <h1>Interview Quiz</h1>
-          <p>
-            MCQ drills from your preferences & resume.
-            {isFree ? " Free: one cycle." : ""}
-          </p>
+          <p>MCQ drills from your preferences & resume. {maxCycles} cycles per hour.</p>
         </div>
         {!idle && !done && !busy && canMoreRounds && (
           <button className="btn btn-solid" onClick={() => start()} disabled={busy}>
@@ -99,9 +97,7 @@ export default function QuizPage() {
           <h2>Wanna start a game?</h2>
           <p className="meta">
             Common interview MCQs matched to your target roles, with explanations.
-            {isFree
-              ? " Free includes one cycle — upgrade for unlimited rounds."
-              : ""}
+            Limited to {maxCycles} cycles per hour.
           </p>
           <button className="btn btn-solid" onClick={() => start({ fresh: true })} disabled={busy}>
             Start quiz
@@ -156,7 +152,7 @@ export default function QuizPage() {
             </p>
           ) : (
             <p className="meta" style={{ marginBottom: "1.2rem" }}>
-              Free includes one quiz cycle. Upgrade for unlimited rounds.
+              Hourly limit reached ({maxCycles} cycles). Try again in ~{waitMins} min.
             </p>
           )}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", justifyContent: "center" }}>
@@ -164,11 +160,7 @@ export default function QuizPage() {
               <button className="btn btn-solid" onClick={() => start()} disabled={busy}>
                 Generate new ones
               </button>
-            ) : (
-              <Link className="btn btn-solid" to="/pricing">
-                View plans
-              </Link>
-            )}
+            ) : null}
             <button className="btn btn-ghost" onClick={stopPlaying} disabled={busy}>
               Stop playing
             </button>

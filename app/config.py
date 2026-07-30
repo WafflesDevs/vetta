@@ -42,28 +42,48 @@ SUPABASE_SECRET_KEY = (
 # If empty, forgot-password uses the request Origin + /reset-password.
 PASSWORD_RESET_REDIRECT_URL = os.getenv("PASSWORD_RESET_REDIRECT_URL", "").strip()
 
-# Stripe (keys live in .env only; checkout not wired yet)
+# Stripe (keys + price IDs live in .env only)
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRODUCT_EXPERT = os.getenv("STRIPE_PRODUCT_EXPERT", "")
+STRIPE_PRODUCT_PRO = os.getenv("STRIPE_PRODUCT_PRO", "")
+STRIPE_PRICE_EXPERT = os.getenv("STRIPE_PRICE_EXPERT", "")
+STRIPE_PRICE_PRO = os.getenv("STRIPE_PRICE_PRO", "")
+# Public app origin for Checkout / Customer Portal redirects (e.g. http://localhost:5173)
+APP_URL = (
+    os.getenv("APP_URL", "")
+    or os.getenv("FRONTEND_URL", "")
+    or "http://localhost:5173"
+).strip().rstrip("/")
 
-# Free-tier product limits (matches Free plan on /pricing)
-MAX_CHATS = int(os.getenv("MAX_CHATS", "1"))
-MAX_MESSAGES_PER_CHAT = int(os.getenv("MAX_MESSAGES_PER_CHAT", "60"))
+# Chat limits (same for everyone — paid plans TBA)
+MAX_CHATS = int(os.getenv("MAX_CHATS", "2"))
+MAX_MESSAGES_PER_CHAT = int(os.getenv("MAX_MESSAGES_PER_CHAT", "30"))
+# Legacy env aliases (ignored for gating; kept so old deploys don't break)
+MAX_CHATS_EXPERT = int(os.getenv("MAX_CHATS_EXPERT", str(MAX_CHATS)))
+MAX_CHATS_PRO = int(os.getenv("MAX_CHATS_PRO", str(MAX_CHATS)))
+MAX_MESSAGES_EXPERT = int(os.getenv("MAX_MESSAGES_EXPERT", str(MAX_MESSAGES_PER_CHAT)))
+MAX_MESSAGES_PRO = int(os.getenv("MAX_MESSAGES_PRO", str(MAX_MESSAGES_PER_CHAT)))
 
-# Jobs hub — plan-aware page size + scrape cache
-JOBS_MAX_ITEMS = int(os.getenv("JOBS_MAX_ITEMS", "200"))  # Pro default / legacy
-JOBS_MAX_ITEMS_FREE = int(os.getenv("JOBS_MAX_ITEMS_FREE", "5"))
-JOBS_MAX_ITEMS_EXPERT = int(os.getenv("JOBS_MAX_ITEMS_EXPERT", "120"))
+# Jobs hub — capped for cost (same for everyone; paid plans TBA)
+JOBS_MAX_ITEMS = int(os.getenv("JOBS_MAX_ITEMS", "10"))
+JOBS_MAX_ITEMS_FREE = int(os.getenv("JOBS_MAX_ITEMS_FREE", str(JOBS_MAX_ITEMS)))
+JOBS_MAX_ITEMS_EXPERT = int(os.getenv("JOBS_MAX_ITEMS_EXPERT", str(JOBS_MAX_ITEMS)))
 JOBS_MAX_ITEMS_PRO = int(os.getenv("JOBS_MAX_ITEMS_PRO", str(JOBS_MAX_ITEMS)))
 JOBS_CACHE_TTL_SECONDS = int(os.getenv("JOBS_CACHE_TTL_SECONDS", str(60 * 60)))
 JOBS_CACHE_TTL_FREE_SECONDS = int(
-    os.getenv("JOBS_CACHE_TTL_FREE_SECONDS", str(6 * 60 * 60))
+    os.getenv("JOBS_CACHE_TTL_FREE_SECONDS", str(JOBS_CACHE_TTL_SECONDS))
 )
 JOBS_CACHE_TTL_PAID_SECONDS = int(
-    os.getenv("JOBS_CACHE_TTL_PAID_SECONDS", str(30 * 60))
+    os.getenv("JOBS_CACHE_TTL_PAID_SECONDS", str(JOBS_CACHE_TTL_SECONDS))
+)
+# Force refresh at most once per hour
+JOBS_REFRESH_COOLDOWN_SECONDS = int(
+    os.getenv("JOBS_REFRESH_COOLDOWN_SECONDS", str(60 * 60))
 )
 JOBS_REFRESH_COOLDOWN_FREE_SECONDS = int(
-    os.getenv("JOBS_REFRESH_COOLDOWN_FREE_SECONDS", str(60 * 60))
+    os.getenv("JOBS_REFRESH_COOLDOWN_FREE_SECONDS", str(JOBS_REFRESH_COOLDOWN_SECONDS))
 )
 # AI match % cache (user + job url + resume/prefs fingerprint)
 JOBS_MATCH_CACHE_TTL_SECONDS = int(
@@ -72,9 +92,12 @@ JOBS_MATCH_CACHE_TTL_SECONDS = int(
 # Cap how many hub jobs get AI match scores per request (rest stay unscored)
 JOBS_MATCH_SCORE_MAX = int(os.getenv("JOBS_MATCH_SCORE_MAX", "25"))
 
-# Interview quiz
-QUIZ_MAX_CYCLES_FREE = int(os.getenv("QUIZ_MAX_CYCLES_FREE", "1"))
+# Interview quiz — 2 cycles per rolling hour
+QUIZ_MAX_CYCLES_PER_HOUR = int(os.getenv("QUIZ_MAX_CYCLES_PER_HOUR", "2"))
+# Legacy alias
+QUIZ_MAX_CYCLES_FREE = int(os.getenv("QUIZ_MAX_CYCLES_FREE", str(QUIZ_MAX_CYCLES_PER_HOUR)))
 QUIZ_QUESTIONS_PER_CYCLE = int(os.getenv("QUIZ_QUESTIONS_PER_CYCLE", "5"))
+QUIZ_CYCLE_WINDOW_SECONDS = int(os.getenv("QUIZ_CYCLE_WINDOW_SECONDS", str(60 * 60)))
 
 # Public lead-gen try funnel (anonymous, bank-only — no LLM)
 PUBLIC_TRY_QUESTIONS = int(os.getenv("PUBLIC_TRY_QUESTIONS", "4"))

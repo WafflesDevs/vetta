@@ -15,12 +15,9 @@ from app.config import (
     ENV,
     IS_PROD,
     missing_required_env,
-    JOBS_MAX_ITEMS_FREE,
-    JOBS_MAX_ITEMS_EXPERT,
-    JOBS_MAX_ITEMS_PRO,
-    JOBS_CACHE_TTL_FREE_SECONDS,
-    JOBS_CACHE_TTL_PAID_SECONDS,
-    JOBS_REFRESH_COOLDOWN_FREE_SECONDS,
+    JOBS_MAX_ITEMS,
+    JOBS_CACHE_TTL_SECONDS,
+    JOBS_REFRESH_COOLDOWN_SECONDS,
     QUIZ_QUESTIONS_PER_CYCLE,
     PASSWORD_RESET_REDIRECT_URL,
     PUBLIC_TRY_QUESTIONS,
@@ -30,6 +27,7 @@ from app.config import (
 )
 from app.auth import get_current_user, get_user_db, get_token
 from app.db import get_anon_client
+from app.core import stripe_billing
 from app.core.agent_service import llm_agent, llm_agent_stream
 from app.core.resume_loader import extract_resume_text
 from app.core.resume_editor import edit_resume_stream
@@ -39,6 +37,7 @@ from app.core.quiz_limits import (
     can_start_quiz,
     quiz_cycles_used,
     quiz_max_cycles,
+    quiz_seconds_until_reset,
     record_quiz_cycle,
 )
 from app.core.public_rate_limit import IpRateLimiter, client_ip
@@ -136,8 +135,17 @@ class QuizAnswerBody(BaseModel):
     selected_index: int
 
 
+class StripeCheckoutBody(BaseModel):
+    plan: str
+
+    @field_validator("plan")
+    @classmethod
+    def plan_ok(cls, v: str) -> str:
+        return stripe_billing.normalize_checkout_plan(v)
+
+
 def profile_plan(profile: dict | None) -> str:
-    """Current product plan. Defaults to free until billing is wired."""
+    """Current product plan from profiles.plan (free / careerexpert / careerpro)."""
     if not profile:
         return "free"
     plan = (profile.get("plan") or "free").strip().lower()
@@ -147,40 +155,41 @@ def profile_plan(profile: dict | None) -> str:
 
 
 def can_use_resume_editor(profile: dict | None) -> bool:
-    return profile_plan(profile) in {"careerexpert", "careerpro"}
+    # Paid plans TBA — resume studio unlocked for everyone.
+    return True
+
+
+def chats_max_for(plan: str) -> int:
+    return MAX_CHATS
+
+
+def messages_max_for(plan: str) -> int:
+    return MAX_MESSAGES_PER_CHAT
 
 
 def _chat_message_cap_detail(plan: str, *, at_cap: bool) -> str:
+    cap = messages_max_for(plan)
     if at_cap:
-        base = f"This chat hit the {MAX_MESSAGES_PER_CHAT} message limit."
-    else:
-        base = (
-            f"Not enough room left in this chat "
-            f"(max {MAX_MESSAGES_PER_CHAT} messages)."
+        return (
+            f"This chat hit the {cap} message limit. "
+            "Delete it and start a new one."
         )
-    if plan == "free":
-        return f"{base} Upgrade for more headroom."
-    return f"{base} Delete it and start a new one."
+    return (
+        f"Not enough room left in this chat (max {cap} messages). "
+        "Delete it and start a new one."
+    )
 
 
 def jobs_max_for(plan: str) -> int:
-    if plan == "careerpro":
-        return JOBS_MAX_ITEMS_PRO
-    if plan == "careerexpert":
-        return JOBS_MAX_ITEMS_EXPERT
-    return JOBS_MAX_ITEMS_FREE
+    return JOBS_MAX_ITEMS
 
 
 def jobs_cache_ttl_for(plan: str) -> int:
-    if plan == "free":
-        return JOBS_CACHE_TTL_FREE_SECONDS
-    return JOBS_CACHE_TTL_PAID_SECONDS
+    return JOBS_CACHE_TTL_SECONDS
 
 
 def jobs_refresh_cooldown_for(plan: str) -> int:
-    if plan == "free":
-        return JOBS_REFRESH_COOLDOWN_FREE_SECONDS
-    return 0
+    return JOBS_REFRESH_COOLDOWN_SECONDS
 
 
 _hub_refresh_at: dict[str, float] = {}
@@ -388,9 +397,20 @@ def reset_password(body: ResetPasswordBody, token: str = Depends(get_token)):
 
 
 @app.get("/api/me")
-def me(user: dict = Depends(get_current_user), db=Depends(get_user_db)):
+def me(
+    user: dict = Depends(get_current_user),
+    db=Depends(get_user_db),
+    sync: bool = Query(False),
+):
     profile = db.table("profiles").select("*").eq("id", user["id"]).maybe_single().execute()
-    return {"user": {"id": user["id"], "email": user["email"]}, "profile": profile.data}
+    p = profile.data or {}
+    # Stripe / paid plans are TBA — do not sync plan from Stripe.
+    _ = (sync, p)  # sync query kept for API compat
+    return {
+        "user": {"id": user["id"], "email": user["email"]},
+        "profile": profile.data,
+        "plan": profile_plan(profile.data),
+    }
 
 
 # ---------- preferences / profile ----------
@@ -521,7 +541,7 @@ def stream_resume_edit(
 ):
     profile = (
         db.table("profiles")
-        .select("resume_text,target_roles,goals,resume_filename")
+        .select("plan,resume_text,target_roles,goals,resume_filename")
         .eq("id", user["id"])
         .maybe_single()
         .execute()
@@ -628,10 +648,18 @@ def preview_resume_pdf(
     )
 
 
-# ---------- chats (max 1 free) + messages (max 60) ----------
+# ---------- chats + messages (plan-aware caps) ----------
 
 @app.get("/api/chats")
 def list_chats(user: dict = Depends(get_current_user), db=Depends(get_user_db)):
+    profile = (
+        db.table("profiles")
+        .select("*")
+        .eq("id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    plan = profile_plan(profile.data)
     result = (
         db.table("chats")
         .select("*")
@@ -639,36 +667,35 @@ def list_chats(user: dict = Depends(get_current_user), db=Depends(get_user_db)):
         .order("updated_at", desc=True)
         .execute()
     )
-    return {"chats": result.data or [], "max_chats": MAX_CHATS}
+    return {
+        "chats": result.data or [],
+        "max_chats": chats_max_for(plan),
+        "plan": plan,
+    }
 
 
 @app.post("/api/chats")
 def create_chat(user: dict = Depends(get_current_user), db=Depends(get_user_db)):
+    profile = (
+        db.table("profiles")
+        .select("*")
+        .eq("id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    plan = profile_plan(profile.data)
+    max_chats = chats_max_for(plan)
     existing = (
         db.table("chats")
         .select("id")
         .eq("user_id", user["id"])
         .execute()
     )
-    if existing.data and len(existing.data) >= MAX_CHATS:
-        # select("*") — do not request plan explicitly; column may be absent until migrated
-        profile = (
-            db.table("profiles")
-            .select("*")
-            .eq("id", user["id"])
-            .maybe_single()
-            .execute()
+    if existing.data and len(existing.data) >= max_chats:
+        detail = (
+            f"You can have at most {max_chats} chats. "
+            "Delete one to make a new chat."
         )
-        if profile_plan(profile.data) == "free":
-            detail = (
-                f"Free tier allows only {MAX_CHATS} chat"
-                f"{'' if MAX_CHATS == 1 else 's'}. Upgrade to create another."
-            )
-        else:
-            detail = (
-                f"You can have at most {MAX_CHATS} chats. "
-                "Delete one to make a new chat."
-            )
         raise HTTPException(status_code=400, detail=detail)
 
     result = db.table("chats").insert({
@@ -680,18 +707,6 @@ def create_chat(user: dict = Depends(get_current_user), db=Depends(get_user_db))
 
 @app.delete("/api/chats/{chat_id}")
 def delete_chat(chat_id: str, user: dict = Depends(get_current_user), db=Depends(get_user_db)):
-    profile = (
-        db.table("profiles")
-        .select("*")
-        .eq("id", user["id"])
-        .maybe_single()
-        .execute()
-    )
-    if profile_plan(profile.data) == "free":
-        raise HTTPException(
-            status_code=403,
-            detail="Free tier cannot delete chats. Upgrade to manage multiple chats.",
-        )
     db.table("messages").delete().eq("chat_id", chat_id).eq("user_id", user["id"]).execute()
     db.table("chats").delete().eq("id", chat_id).eq("user_id", user["id"]).execute()
     return {"ok": True}
@@ -717,10 +732,19 @@ def get_messages(chat_id: str, user: dict = Depends(get_current_user), db=Depend
         .order("created_at")
         .execute()
     )
+    profile = (
+        db.table("profiles")
+        .select("*")
+        .eq("id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    plan = profile_plan(profile.data)
     return {
         "chat": chat.data,
         "messages": msgs.data or [],
-        "max_messages": MAX_MESSAGES_PER_CHAT,
+        "max_messages": messages_max_for(plan),
+        "plan": plan,
     }
 
 
@@ -757,13 +781,14 @@ def send_message(
         .execute()
     )
     plan = profile_plan(profile.data)
+    msg_cap = messages_max_for(plan)
     # each user turn adds 2 messages (user + assistant)
-    if count >= MAX_MESSAGES_PER_CHAT:
+    if count >= msg_cap:
         raise HTTPException(
             status_code=400,
             detail=_chat_message_cap_detail(plan, at_cap=True),
         )
-    if count + 2 > MAX_MESSAGES_PER_CHAT:
+    if count + 2 > msg_cap:
         raise HTTPException(
             status_code=400,
             detail=_chat_message_cap_detail(plan, at_cap=False),
@@ -844,12 +869,13 @@ def send_message_stream(
         .execute()
     )
     plan = profile_plan(profile.data)
-    if count >= MAX_MESSAGES_PER_CHAT:
+    msg_cap = messages_max_for(plan)
+    if count >= msg_cap:
         raise HTTPException(
             status_code=400,
             detail=_chat_message_cap_detail(plan, at_cap=True),
         )
-    if count + 2 > MAX_MESSAGES_PER_CHAT:
+    if count + 2 > msg_cap:
         raise HTTPException(
             status_code=400,
             detail=_chat_message_cap_detail(plan, at_cap=False),
@@ -1065,6 +1091,7 @@ def careers_hub(
             "refresh_cooldown_seconds": cooldown,
             "refresh_wait_seconds": refresh_wait,
             "from_cache": from_cache,
+            "note": f"Job search limited to {max_jobs} due to cost",
         },
     }
 
@@ -1339,7 +1366,7 @@ def quiz_start(
         })
     used = record_quiz_cycle(user["id"]) if playable else quiz_cycles_used(user["id"])
     max_cycles = quiz_max_cycles(plan)
-    remaining = None if max_cycles is None else max(0, max_cycles - used)
+    remaining = max(0, max_cycles - used)
     return {
         "questions": playable,
         "source": "role_bank_or_model",
@@ -1348,52 +1375,43 @@ def quiz_start(
             "cycles_used": used,
             "max_cycles": max_cycles,
             "cycles_remaining": remaining,
+            "window_seconds": 3600,
+            "reset_in_seconds": quiz_seconds_until_reset(user["id"]),
+            "note": f"{max_cycles} quiz cycles per hour",
         },
     }
 
 
-# ---------- plans ----------
+# ---------- plans (paid tiers TBA) ----------
 
 PLANS = [
     {
         "id": "free",
         "name": "Free",
-        "price": "$0",
+        "price": "TBA",
         "price_period": "",
-        "badge": "Try the loop",
-        "blurb": "Learn Find → Score → Tailor → Practice. Cap-friendly by design.",
+        "badge": "TBA",
+        "blurb": "Full product access while paid plans are TBA.",
         "features": [
-            "1 chat · 60 messages",
-            "Job hub: ~5 jobs",
-            "1 interview quiz cycle",
-            "Resume upload for chat + matching",
+            "2 chats · 30 messages each",
+            "Delete a chat to free a slot or reset the message cap",
+            "Job search limited to 10 due to cost · refresh once per hour",
+            "Interview quiz: 2 cycles per hour",
+            "Live PDF resume editor",
         ],
-        "restrictions": [
-            "Cannot delete the chat",
-            "No live PDF resume editor",
-            "Job refreshes cooldown ~1 hour (scrapes less)",
-            "No extra quiz rounds",
-            "Fit scores / rewrites capped via chat limits",
-        ],
-        "cta": "You're on Free",
+        "restrictions": [],
+        "cta": "Coming soon",
         "cta_disabled": True,
         "featured": False,
     },
     {
         "id": "careerexpert",
         "name": "CareerExpert",
-        "price": "$19",
-        "price_period": "/mo",
-        "badge": "Best value",
-        "blurb": "Polish materials without burning Free’s chat budget.",
-        "features": [
-            "More chats / higher message limit",
-            "Job hub: up to 120 listings + faster refreshes",
-            "Unlimited interview quiz rounds",
-            "Unlimited fit scores",
-            "Unlimited resume rewrites + cover letters",
-            "Live multi-page PDF resume editor",
-        ],
+        "price": "TBA",
+        "price_period": "",
+        "badge": "TBA",
+        "blurb": "Paid tiers coming soon.",
+        "features": ["TBA"],
         "restrictions": [],
         "cta": "Coming soon",
         "cta_disabled": True,
@@ -1402,23 +1420,13 @@ PLANS = [
     {
         "id": "careerpro",
         "name": "CareerPro",
-        "price": "$39",
-        "price_period": "/mo",
-        "badge": "For active searches",
-        "blurb": (
-            "When Free feels cramped and Expert still isn’t enough headroom — "
-            "Pro is the full coaching loop."
-        ),
-        "features": [
-            "Everything in Expert (incl. live PDF editor)",
-            "Job hub: up to 200 listings",
-            "Highest limits across chat, jobs, and quiz",
-            "Unlimited coaching loop — score, rewrite, practice without rationing",
-            "Priority job matching to your prefs",
-            "Early access to new tools as they ship",
-        ],
+        "price": "TBA",
+        "price_period": "",
+        "badge": "TBA",
+        "blurb": "Paid tiers coming soon.",
+        "features": ["TBA"],
         "restrictions": [],
-        "cta": "Coming soon — join for Pro",
+        "cta": "Coming soon",
         "cta_disabled": True,
         "featured": False,
     },
@@ -1428,16 +1436,58 @@ PLANS = [
 @app.get("/api/plans")
 def plans():
     return {
-        "tagline": (
-            "Free proves the loop. Expert unlocks the studio. "
-            "Pro runs an active search without hitting the wall."
-        ),
+        "tagline": "Paid plans are TBA. Everyone currently gets the full product.",
         "note": (
-            "Checkout is not live yet — paid upgrades open soon. "
-            "Limits below already match what Free enforces today."
+            "Chat: 2 open chats, 30 messages each. "
+            "Jobs: limited to 10 due to cost (refresh once per hour). "
+            "Quiz: 2 cycles per hour."
         ),
         "plans": PLANS,
+        "checkout_ready": False,
     }
+
+
+# ---------- Stripe billing (disabled — paid plans TBA) ----------
+
+_STRIPE_TBA = "Billing is TBA. Paid plans are not available yet."
+
+
+@app.post("/api/stripe/checkout")
+def stripe_checkout(
+    body: StripeCheckoutBody,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_user_db),
+):
+    raise HTTPException(status_code=503, detail=_STRIPE_TBA)
+
+
+@app.post("/api/stripe/portal")
+def stripe_portal(
+    user: dict = Depends(get_current_user),
+    db=Depends(get_user_db),
+):
+    raise HTTPException(status_code=503, detail=_STRIPE_TBA)
+
+
+@app.post("/api/stripe/sync")
+def stripe_sync(
+    user: dict = Depends(get_current_user),
+    db=Depends(get_user_db),
+):
+    raise HTTPException(status_code=503, detail=_STRIPE_TBA)
+
+
+@app.get("/api/stripe/debug")
+def stripe_debug(
+    user: dict = Depends(get_current_user),
+    db=Depends(get_user_db),
+):
+    raise HTTPException(status_code=503, detail=_STRIPE_TBA)
+
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    return {"ok": True, "ignored": True, "reason": "billing_tba"}
 
 
 # ---------- health + frontend ----------

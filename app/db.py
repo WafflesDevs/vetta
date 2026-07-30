@@ -8,9 +8,13 @@ def get_anon_client() -> Client:
 
 
 def get_admin_client() -> Client:
-    """Server client using the secret key (if you have one)."""
-    key = SUPABASE_SECRET_KEY or SUPABASE_ANON_KEY
-    return create_client(SUPABASE_URL, key)
+    """Service-role / secret key client — bypasses RLS for plan sync writes."""
+    if not SUPABASE_SECRET_KEY:
+        raise RuntimeError(
+            "SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) is required for "
+            "server-side profiles.plan writes. The anon key is blocked by RLS."
+        )
+    return create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
 
 
 def client_for_user(access_token: str) -> Client:

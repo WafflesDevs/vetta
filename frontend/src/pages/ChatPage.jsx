@@ -127,15 +127,11 @@ export default function ChatPage({ profile }) {
   const [statusText, setStatusText] = useState("Thinking...");
   const [streamText, setStreamText] = useState("");
   const [streamRedirects, setStreamRedirects] = useState([]);
-  const [maxChats, setMaxChats] = useState(1);
-  const [maxMessages, setMaxMessages] = useState(60);
+  const [maxChats, setMaxChats] = useState(2);
+  const [maxMessages, setMaxMessages] = useState(30);
   const bottomRef = useRef(null);
   const statusIdx = useRef(0);
   const inputRef = useRef(null);
-
-  const plan = String(profile?.plan || "free").toLowerCase();
-  const isFree = !["careerexpert", "expert", "careerpro", "pro"].includes(plan);
-  const canDeleteChats = !isFree;
 
   async function loadChats() {
     const data = await api("/api/chats");
@@ -181,9 +177,8 @@ export default function ChatPage({ profile }) {
 
   const atChatCap = chats.length >= maxChats;
   const atMessageCap = messages.length >= maxMessages;
-  const chatCapHint = canDeleteChats
-    ? `You can have at most ${maxChats} chat${maxChats === 1 ? "" : "s"}. Delete one to start a new chat.`
-    : `Free tier allows only ${maxChats} chat${maxChats === 1 ? "" : "s"}. Upgrade to create another.`;
+  const chatCapHint = `You can have at most ${maxChats} chats. Delete one to start a new chat.`;
+  const messageCapHint = `This chat hit the ${maxMessages} message limit. Delete it to continue.`;
 
   async function createChat() {
     setError("");
@@ -201,10 +196,6 @@ export default function ChatPage({ profile }) {
   }
 
   async function removeChat(id) {
-    if (!canDeleteChats) {
-      setError("Free tier cannot delete chats. Upgrade to manage multiple chats.");
-      return;
-    }
     setError("");
     try {
       await api(`/api/chats/${id}`, { method: "DELETE" });
@@ -222,7 +213,10 @@ export default function ChatPage({ profile }) {
   }
 
   async function sendMessage(content) {
-    if (!chatId || !content.trim() || busy || atMessageCap) return;
+    if (!chatId || !content.trim() || busy || atMessageCap) {
+      if (atMessageCap) setError(messageCapHint);
+      return;
+    }
     setBusy(true);
     setError("");
     setStreamText("");
@@ -365,9 +359,7 @@ export default function ChatPage({ profile }) {
         </p>
         {atChatCap && (
           <p className="meta" style={{ margin: "0 0 0.7rem" }}>
-            {canDeleteChats
-              ? "Chat limit reached. Delete a chat to start a new one."
-              : "Chat limit reached. Upgrade to create another."}
+            Chat limit reached. Delete a chat to start a new one.
           </p>
         )}
         {chats.map((c) => (
@@ -378,11 +370,9 @@ export default function ChatPage({ profile }) {
             >
               {c.title}
             </button>
-            {canDeleteChats && (
-              <button className="x" onClick={() => removeChat(c.id)}>
-                ✕
-              </button>
-            )}
+            <button className="x" onClick={() => removeChat(c.id)} title="Delete chat">
+              ✕
+            </button>
           </div>
         ))}
         {chats.length === 0 && <div className="meta">No chats yet. Hit +</div>}
@@ -399,7 +389,6 @@ export default function ChatPage({ profile }) {
           </div>
           <p className="coach-limits meta">
             {chats.length}/{maxChats} chats · {messages.length}/{maxMessages} msgs
-            {isFree ? " · Free" : ""}
           </p>
         </header>
 
@@ -505,7 +494,7 @@ export default function ChatPage({ profile }) {
             onChange={(e) => setText(e.target.value)}
             placeholder={
               atMessageCap
-                ? `Message limit reached (${maxMessages})`
+                ? `Limit reached — delete this chat (${maxMessages} msgs)`
                 : busy
                   ? statusText
                   : "Message Career Coach"

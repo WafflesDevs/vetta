@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { api, getToken } from "../api";
-import { EXPERT_LOCK_PERKS } from "../plansFallback";
-
-function canUseResumeEditor(profile) {
-  const plan = String(profile?.plan || "free").toLowerCase();
-  return plan === "careerexpert" || plan === "expert" || plan === "careerpro" || plan === "pro";
-}
 
 const CHIPS = [
   "Tighten the summary",
@@ -15,89 +8,6 @@ const CHIPS = [
   "Expand to two pages with more detail",
   "Emphasize measurable impact",
 ];
-
-function ResumeLockTease() {
-  return (
-    <div className="resume-lock-tease" aria-hidden="true">
-      <div className="resume-split">
-        <div className="resume-coach panel">
-          <div className="resume-log">
-            <div className="bubble assistant">
-              Loaded your resume. Tell me what to change on the PDF.
-            </div>
-            <div className="bubble user">Expand experience into two pages with stronger bullets</div>
-            <div className="bubble assistant">
-              Rewrote impact lines and stretched the layout across two pages. Scroll the preview to review.
-            </div>
-          </div>
-          <div className="resume-chips">
-            {CHIPS.slice(0, 3).map((c) => (
-              <span key={c} className="chip">
-                {c}
-              </span>
-            ))}
-          </div>
-          <div className="resume-compose">
-            <div className="resume-lock-fake-input">What should change on the PDF?</div>
-            <span className="btn btn-solid">Apply</span>
-          </div>
-        </div>
-
-        <div className="resume-stage">
-          <div className="resume-stage-label meta">Exact PDF preview · scroll for more pages</div>
-          <div className="resume-paper resume-lock-mock-stage">
-            <div className="resume-lock-pages">
-              <div className="resume-paper-inner resume-lock-page">
-                <p className="resume-name-line">Alex Morgan</p>
-                <p className="resume-line muted" style={{ textAlign: "center" }}>
-                  Product · Growth · Systems
-                </p>
-                <div className="resume-blank" />
-                <p className="resume-section">SUMMARY</p>
-                <p className="resume-line">
-                  Operator who ships measurable product outcomes across B2B SaaS teams.
-                </p>
-                <p className="resume-line">
-                  Comfortable owning discovery, delivery, and post-launch iteration end to end.
-                </p>
-                <p className="resume-section">EXPERIENCE</p>
-                <p className="resume-line">
-                  <strong>Senior Product Manager</strong> — Northline Labs
-                </p>
-                <p className="resume-line muted">2022 — Present</p>
-                <p className="resume-line">• Grew activation 28% by redesigning onboarding and in-app cues</p>
-                <p className="resume-line">• Cut support tickets 19% after shipping self-serve diagnostics</p>
-                <p className="resume-line">• Led roadmap for billing, seats, and usage analytics</p>
-                <div className="resume-blank" />
-                <p className="resume-line">
-                  <strong>Product Manager</strong> — Harbor Collective
-                </p>
-                <p className="resume-line muted">2019 — 2022</p>
-                <p className="resume-line">• Launched partner portal used by 120+ agencies</p>
-                <p className="resume-line">• Built experiment cadence that lifted retention 11%</p>
-              </div>
-              <div className="resume-paper-inner resume-lock-page resume-lock-page-2">
-                <p className="resume-section">EXPERIENCE (CONT.)</p>
-                <p className="resume-line">
-                  <strong>Associate PM</strong> — Rivertide
-                </p>
-                <p className="resume-line muted">2017 — 2019</p>
-                <p className="resume-line">• Owned mobile release train across iOS and Android</p>
-                <p className="resume-line">• Partnered with sales on pricing pilots for mid-market</p>
-                <p className="resume-section">SKILLS</p>
-                <p className="resume-line">Roadmapping · Experimentation · Analytics · Stakeholder alignment</p>
-                <p className="resume-section">EDUCATION</p>
-                <p className="resume-line">
-                  <strong>B.S. Information Systems</strong> — State University
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function PdfPreview({ text, streaming }) {
   const [url, setUrl] = useState("");
@@ -381,45 +291,6 @@ export default function ResumePage({ profile, onProfile }) {
   }
 
   const hasResume = Boolean((draft || profile?.resume_text || "").trim());
-  const editorUnlocked = canUseResumeEditor(profile);
-
-  if (!editorUnlocked) {
-    return (
-      <div className="resume-studio resume-studio-locked">
-        <div className="page-title">
-          <div>
-            <h1>Resume</h1>
-            <p>Live PDF editing is on CareerExpert and CareerPro.</p>
-          </div>
-        </div>
-        <div className="resume-lock-scene">
-          <ResumeLockTease />
-          <div className="resume-lock-veil" />
-          <div className="panel resume-lock">
-            <span className="tag">Free</span>
-            <h2>Editor locked on Free</h2>
-            <p className="meta">
-              Upload a PDF or DOCX in Settings so chat and the job hub can use it. CareerExpert unlocks
-              the live studio:
-            </p>
-            <ul className="resume-lock-perks">
-              {EXPERT_LOCK_PERKS.map((perk) => (
-                <li key={perk}>{perk}</li>
-              ))}
-            </ul>
-            <div className="resume-lock-actions">
-              <Link className="btn btn-solid" to="/app/plans">
-                View plans
-              </Link>
-              <Link className="btn btn-ghost" to="/app/settings">
-                Upload in Settings
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="resume-studio">

@@ -42,3 +42,19 @@ services:
         sync: false
       - key: LANGSMITH_API_KEY
         sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRODUCT_EXPERT
+        sync: false
+      - key: STRIPE_PRODUCT_PRO
+        sync: false
+      - key: STRIPE_PRICE_EXPERT
+        sync: false
+      - key: STRIPE_PRICE_PRO
+        sync: false
+      - key: APP_URL
+        sync: false

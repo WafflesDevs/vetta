@@ -148,7 +148,7 @@ export default function HubPage({ profile }) {
     if (!(profile?.target_roles || "").trim()) return;
     if (force && refreshLocked) {
       setError(
-        `Free tier refreshes once per hour. Try again in ${Math.ceil(refreshWait / 60)} min — or upgrade for faster scrapes.`
+        `Job search refreshes once per hour. Try again in ${Math.ceil(refreshWait / 60)} min.`
       );
       return;
     }
@@ -369,7 +369,7 @@ export default function HubPage({ profile }) {
           disabled={busy || refreshLocked}
           title={
             refreshLocked
-              ? `Free refresh cooldown: ${Math.ceil(refreshWait / 60)} min left`
+              ? `Refresh once per hour · ${Math.ceil(refreshWait / 60)} min left`
               : "Refresh listings"
           }
         >
@@ -377,9 +377,11 @@ export default function HubPage({ profile }) {
         </button>
       </div>
 
-      {limits?.max_jobs != null && limits.plan === "free" ? (
+      {limits?.max_jobs != null ? (
         <p className="meta" style={{ marginTop: "-0.35rem" }}>
-          Free hub: up to {limits.max_jobs} jobs · longer cache · limited refreshes
+          {limits.note || `Job search limited to ${limits.max_jobs} due to cost`}
+          {" · "}
+          refresh once per hour
         </p>
       ) : null}
 

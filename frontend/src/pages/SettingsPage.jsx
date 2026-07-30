@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { api, getToken } from "../api";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api } from "../api";
 
 export default function SettingsPage({ profile, onProfile }) {
   const [prefs, setPrefs] = useState({
@@ -15,6 +16,15 @@ export default function SettingsPage({ profile, onProfile }) {
 
   const resumeName = profile?.resume_filename || "";
   const hasResume = Boolean(resumeName || (profile?.resume_text || "").trim());
+
+  useEffect(() => {
+    setPrefs({
+      display_name: profile?.display_name || "",
+      target_roles: profile?.target_roles || "",
+      locations: profile?.locations || "",
+      goals: profile?.goals || "",
+    });
+  }, [profile]);
 
   async function savePrefs(e) {
     e.preventDefault();
@@ -42,15 +52,9 @@ export default function SettingsPage({ profile, onProfile }) {
     setError("");
     setMsg("");
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const res = await fetch("/api/resume", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${getToken()}` },
-        body,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Upload failed");
+      const form = new FormData();
+      form.append("file", file);
+      const data = await api("/api/resume", { method: "POST", body: form });
       if (data.profile) onProfile?.(data.profile);
       setMsg(`Resume uploaded (${data.filename}, ${data.chars} characters).`);
       setFile(null);
@@ -89,6 +93,22 @@ export default function SettingsPage({ profile, onProfile }) {
 
       {error && <div className="alert alert-error">{error}</div>}
       {msg && <div className="alert alert-ok">{msg}</div>}
+
+      <div className="panel" style={{ marginBottom: "1.25rem" }}>
+        <h3 style={{ marginTop: 0, fontFamily: "var(--display)" }}>Plans</h3>
+        <p className="meta" style={{ marginTop: 0 }}>
+          Paid plans are <strong>TBA</strong>. You currently have full product access.
+        </p>
+        <p className="meta" style={{ marginBottom: 0 }}>
+          Chat: 2 open chats · 30 messages each. Job search limited to 10 due to cost (refresh once
+          per hour). Quiz: 2 cycles per hour.
+        </p>
+        <div style={{ marginTop: "0.75rem" }}>
+          <Link className="btn btn-ghost" to="/app/plans">
+            View plans (TBA)
+          </Link>
+        </div>
+      </div>
 
       <div className="grid-2">
         <form className="panel" onSubmit={uploadResume}>

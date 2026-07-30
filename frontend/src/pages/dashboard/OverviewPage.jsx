@@ -64,7 +64,7 @@ export default function OverviewPage({ profile }) {
 
       <div className="panel" style={{ marginTop: "1rem" }}>
         <p className="meta" style={{ margin: 0 }}>
-          Free tier · 1 chat · 60 messages · hub limits · light quiz · Resume upload in Settings · Live PDF on Expert+
+          2 chats · 30 messages each · job search limited to 10 due to cost · quiz 2/hour · refresh once per hour
         </p>
       </div>
     </div>

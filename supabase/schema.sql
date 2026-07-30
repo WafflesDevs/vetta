@@ -10,12 +10,18 @@ create table if not exists public.profiles (
   resume_text text default '',
   resume_filename text default '',
   plan text default 'free',
+  stripe_customer_id text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
--- Existing DBs created before plan was added:
+-- Existing DBs created before plan / Stripe columns were added:
 alter table public.profiles add column if not exists plan text default 'free';
+alter table public.profiles add column if not exists stripe_customer_id text;
+-- Optional: unique index for webhook lookups by Stripe customer
+create unique index if not exists profiles_stripe_customer_id_uidx
+  on public.profiles (stripe_customer_id)
+  where stripe_customer_id is not null;
 
 create table if not exists public.chats (
   id uuid primary key default gen_random_uuid(),

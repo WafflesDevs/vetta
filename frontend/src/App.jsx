@@ -48,7 +48,11 @@ export default function App() {
  }
  const data = await api("/api/me");
  setUser(data.user);
- setProfile(data.profile);
+ // Prefer top-level plan from /api/me so UI never lags a stale profile.plan.
+ const nextProfile = data.profile
+   ? { ...data.profile, plan: data.plan || data.profile.plan }
+   : data.profile;
+ setProfile(nextProfile);
  return data;
  }
 
@@ -158,7 +162,10 @@ export default function App() {
  path="settings"
  element={<SettingsPage profile={profile} onProfile={setProfile} />}
  />
- <Route path="plans" element={<PlansPage />} />
+ <Route
+ path="plans"
+ element={<PlansPage profile={profile} onProfile={setProfile} />}
+ />
  </Route>
 
  <Route path="/auth" element={<Navigate to="/login" replace />} />

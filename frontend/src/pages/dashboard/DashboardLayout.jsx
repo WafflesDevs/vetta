@@ -81,11 +81,16 @@ const LINKS = [
   { to: "/app/plans", label: "Plans", icon: ICONS.plans },
 ];
 
+function planChipLabel() {
+  return "TBA";
+}
+
 export default function DashboardLayout({ user, profile, onLogout, onProfile }) {
   const name = profile?.display_name || user?.email || "you";
   const [onboardingOpen, setOnboardingOpen] = useState(() => needsOnboarding(profile));
   const [navOpen, setNavOpen] = useState(false);
   const location = useLocation();
+  const chip = planChipLabel();
 
   useEffect(() => {
     if (needsOnboarding(profile)) setOnboardingOpen(true);
@@ -141,8 +146,8 @@ export default function DashboardLayout({ user, profile, onLogout, onProfile }) 
           <Logo size={26} />
           <span className="brand-name">Vetta</span>
         </Link>
-        <Link to="/pricing" className="plan-chip" title="Current plan">
-          Free
+        <Link to="/app/plans" className="plan-chip" title="Current plan">
+          {chip}
         </Link>
       </header>
 
@@ -175,8 +180,8 @@ export default function DashboardLayout({ user, profile, onLogout, onProfile }) 
         </nav>
         <div className="dash-foot">
           <div className="dash-user">
-            <Link to="/pricing" className="plan-chip dash-side-plan" title="Current plan">
-              Free
+            <Link to="/app/plans" className="plan-chip dash-side-plan" title="Current plan">
+              {chip}
             </Link>
             <div className="dash-user-meta">
               Signed in as

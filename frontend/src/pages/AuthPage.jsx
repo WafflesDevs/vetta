@@ -62,7 +62,7 @@ export default function AuthPage({ onAuth }) {
  <section className="auth-panel">
  <form className="auth-card" onSubmit={submit}>
  <h2>{mode === "login" ? "Welcome back" : "Create your account"}</h2>
- <p className="sub">Free tier · 1 chat · 60 messages</p>
+ <p className="sub">2 chats · 30 messages each · full access</p>
 
  {error && <div className="error">{error}</div>}
 

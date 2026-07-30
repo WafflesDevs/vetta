@@ -2175,6 +2175,25 @@ a:hover .logo-wrap .logo-img,
  color: var(--accent);
  background: rgba(200,245,66,0.08);
 }
+.price-tile.is-current {
+ border-color: rgba(200,245,66,0.75);
+ box-shadow: 0 0 0 1px rgba(200,245,66,0.25);
+}
+.price-tile.is-tba {
+ opacity: 0.55;
+ filter: grayscale(0.35);
+ pointer-events: none;
+}
+.price-tile.is-tba:hover {
+ transform: none;
+}
+.price-tile .tba-current,
+.price-tile.is-current .tba {
+ border-color: rgba(200,245,66,0.8);
+ color: var(--accent-ink);
+ background: var(--accent);
+ letter-spacing: 0.08em;
+}
 .price-tile .tba {
  display: inline-block;
  border: 1px solid var(--line-strong);
