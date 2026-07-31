@@ -38,6 +38,9 @@ services:
         value: "3600"
       - key: QUIZ_QUESTIONS_PER_CYCLE
         value: "5"
+      # Cheapest Claude Haiku for all AI features (chat, quiz, resume, tools, scores)
+      - key: AI_MODEL
+        value: claude-haiku-4-5
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: TAVILY_API_KEY

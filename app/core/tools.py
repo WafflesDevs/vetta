@@ -36,7 +36,7 @@ def _llm(
     model: str | None = None,
 ) -> ChatAnthropic:
     return ChatAnthropic(
-        model=model or config.AGENT_MODEL,
+        model=model or config.AI_MODEL,
         temperature=temperature,
         max_tokens=max_tokens,
         api_key=config.require_anthropic_api_key(),
@@ -260,7 +260,7 @@ PROFILE PREFS:
 Also weigh preference alignment (role/location/goals) into the score.
 """
 
-    scorer = _llm(temperature=0, max_tokens=500, model=config.MATCH_SCORE_MODEL)
+    scorer = _llm(temperature=0, max_tokens=500, model=config.AI_MODEL)
     response = scorer.invoke(
         f"""Compare this resume to this job. Return ONLY valid JSON with this shape:
 {{
@@ -363,7 +363,7 @@ def batch_score_job_matches(
     scorer = _llm(
         temperature=0,
         max_tokens=min(1200, 80 + 40 * len(items)),
-        model=config.MATCH_SCORE_MODEL,
+        model=config.AI_MODEL,
     )
     try:
         response = scorer.invoke(

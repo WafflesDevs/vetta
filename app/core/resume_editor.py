@@ -79,10 +79,10 @@ def edit_resume_stream(
     yield {"type": "status", "text": "Reading your resume..."}
 
     model = ChatAnthropic(
-        model=config.RESUME_EDIT_MODEL,
+        model=config.AI_MODEL,
         temperature=0.35,
         streaming=True,
-        max_tokens=2200,
+        max_tokens=config.RESUME_EDIT_MAX_TOKENS,
         api_key=config.require_anthropic_api_key(),
     )
 

@@ -317,7 +317,7 @@ def llm_agent_stream(
 ) -> Iterator[dict]:
     """Yield status/token/done events. Tokens are emitted only after JSON scrubbing."""
     model = ChatAnthropic(
-        model=config.AGENT_MODEL,
+        model=config.AI_MODEL,
         temperature=0.2,
         streaming=True,
         max_tokens=config.AGENT_MAX_TOKENS,

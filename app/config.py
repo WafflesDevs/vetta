@@ -129,15 +129,23 @@ def require_anthropic_api_key() -> str:
     return key
 
 
-# Agent / generation cost knobs (Claude models)
-AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-4-5")
-RESUME_EDIT_MODEL = os.getenv("RESUME_EDIT_MODEL", AGENT_MODEL)
-# Cheap model for hub batch / single job match scoring
-MATCH_SCORE_MODEL = os.getenv("MATCH_SCORE_MODEL", "claude-haiku-4-5")
+# Claude model selection — cheapest Haiku tier for all AI features.
+# Set AI_MODEL (or ANTHROPIC_MODEL) once; per-feature envs override only if needed.
+DEFAULT_AI_MODEL = "claude-haiku-4-5"
+AI_MODEL = (
+    os.getenv("AI_MODEL")
+    or os.getenv("ANTHROPIC_MODEL")
+    or DEFAULT_AI_MODEL
+).strip() or DEFAULT_AI_MODEL
+AGENT_MODEL = (os.getenv("AGENT_MODEL") or AI_MODEL).strip() or AI_MODEL
+RESUME_EDIT_MODEL = (os.getenv("RESUME_EDIT_MODEL") or AI_MODEL).strip() or AI_MODEL
+MATCH_SCORE_MODEL = (os.getenv("MATCH_SCORE_MODEL") or AI_MODEL).strip() or AI_MODEL
 AGENT_HISTORY_TURNS = int(os.getenv("AGENT_HISTORY_TURNS", "8"))
 RESUME_PREVIEW_CHARS = int(os.getenv("RESUME_PREVIEW_CHARS", "1500"))
 RESUME_TOOL_CHARS = int(os.getenv("RESUME_TOOL_CHARS", "3500"))
 AGENT_MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS", "900"))
+RESUME_EDIT_MAX_TOKENS = int(os.getenv("RESUME_EDIT_MAX_TOKENS", "1600"))
+QUIZ_MAX_TOKENS = int(os.getenv("QUIZ_MAX_TOKENS", "1200"))
 
 ALLOWED_ORIGINS = [
     o.strip()

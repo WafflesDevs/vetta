@@ -179,9 +179,9 @@ def _generate_quiz_anthropic(
 ) -> list[dict]:
     count = max(3, min(count, 8))
     model = ChatAnthropic(
-        model=config.AGENT_MODEL,
+        model=config.AI_MODEL,
         temperature=0.95,
-        max_tokens=1400,
+        max_tokens=config.QUIZ_MAX_TOKENS,
         api_key=config.require_anthropic_api_key(),
     )
     seed = f"{uuid.uuid4().hex[:10]}-{random.randint(1000, 9999)}"

@@ -26,7 +26,7 @@ Career coach app I built for job search: chat with an AI coach, browse live role
 
 ## Stack
 
-- FastAPI + LangChain / LangGraph (`claude-sonnet-4-5`)
+- FastAPI + LangChain / LangGraph (`claude-haiku-4-5` via `AI_MODEL`)
 - React (Vite) UI, served from the same Render service in production
 - Supabase auth + Postgres
 - Jobs: Adzuna → JSearch → Tavily (Apify off by default)
